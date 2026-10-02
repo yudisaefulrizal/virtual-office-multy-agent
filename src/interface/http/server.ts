@@ -1,0 +1,102 @@
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import fastifyStatic from '@fastify/static';
+import { eq } from 'drizzle-orm';
+import Fastify from 'fastify';
+import { z } from 'zod';
+import { agentSessions, artifacts } from '../../db/schema';
+import type { OfficeContext, StoredEvent } from '../../orchestrator/context';
+import { createObjective } from '../../orchestrator/office';
+import { listObjectives, objectiveTrace, officeView } from '../../orchestrator/queries';
+import type { Worker } from '../../orchestrator/worker';
+
+const CreateObjectiveBody = z.object({
+  title: z.string().trim().min(3).max(200),
+  description: z.string().trim().max(5000).optional(),
+});
+const IdParams = z.object({ id: z.uuid() });
+
+export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string) {
+  const app = Fastify({ logger: { level: 'warn' } });
+
+  app.setErrorHandler((err, _req, reply) => {
+    if (err instanceof z.ZodError) return reply.status(400).send({ error: 'Input tidak valid', issues: err.issues });
+    app.log.error(err);
+    return reply.status(500).send({ error: 'Terjadi kesalahan di server' });
+  });
+
+  app.get('/api/office', () => officeView(ctx, (id) => worker.runtimeState(id)));
+
+  app.get('/api/objectives', () => listObjectives(ctx));
+
+  app.post('/api/objectives', async (req, reply) => {
+    const body = CreateObjectiveBody.parse(req.body);
+    const created = await createObjective(ctx, body);
+    void worker.tick();
+    return reply.status(201).send(created);
+  });
+
+  app.get('/api/objectives/:id', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const trace = await objectiveTrace(ctx, id);
+    return trace ?? reply.status(404).send({ error: 'Objective tidak ditemukan' });
+  });
+
+  app.post('/api/tasks/:id/cancel', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const ok = await worker.cancel(id);
+    return ok ? { ok } : reply.status(409).send({ error: 'Task tidak bisa dibatalkan' });
+  });
+
+  // File dibaca hanya jika path-nya tercatat di DB dan berada di dalam folder workspaces.
+  const readWorkspaceFile = async (rel: string) => {
+    const full = path.resolve(ctx.workspacesDir, rel);
+    if (!full.startsWith(ctx.workspacesDir + path.sep)) throw new Error('Path di luar workspace');
+    return readFile(full);
+  };
+
+  app.get('/api/artifacts/:id/content', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const [a] = await ctx.db.select().from(artifacts).where(eq(artifacts.id, id));
+    if (!a) return reply.status(404).send({ error: 'Artifact tidak ditemukan' });
+    const buf = await readWorkspaceFile(a.path).catch(() => null);
+    if (!buf) return reply.status(410).send({ error: 'File artifact sudah tidak ada' });
+    const textual = !a.mimeType || /^text\/|json|svg/.test(a.mimeType);
+    return reply.type(textual ? 'text/plain; charset=utf-8' : a.mimeType!).send(buf);
+  });
+
+  app.get('/api/sessions/:id/log', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const [s] = await ctx.db.select().from(agentSessions).where(eq(agentSessions.id, id));
+    if (!s?.logPath) return reply.status(404).send({ error: 'Log tidak ditemukan' });
+    const buf = await readWorkspaceFile(s.logPath).catch(() => Buffer.from(''));
+    return reply.type('text/plain; charset=utf-8').send(buf);
+  });
+
+  // Server-Sent Events: UI memuat ulang data saat ada event baru.
+  app.get('/api/stream', (req, reply) => {
+    reply.raw.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    });
+    reply.raw.write(': connected\n\n');
+    const onEvent = (ev: StoredEvent) => reply.raw.write(`data: ${JSON.stringify({ id: ev.id, type: ev.type, objectiveId: ev.objectiveId })}\n\n`);
+    const ping = setInterval(() => reply.raw.write(': ping\n\n'), 25_000);
+    ctx.bus.on('event', onEvent);
+    req.raw.on('close', () => {
+      clearInterval(ping);
+      ctx.bus.off('event', onEvent);
+    });
+  });
+
+  if (webDist && existsSync(webDist)) {
+    app.register(fastifyStatic, { root: webDist });
+    app.setNotFoundHandler((req, reply) =>
+      req.url.startsWith('/api/') ? reply.status(404).send({ error: 'Tidak ditemukan' }) : reply.sendFile('index.html'),
+    );
+  }
+
+  return app;
+}

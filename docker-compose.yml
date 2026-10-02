@@ -1,0 +1,21 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: vo-root
+      MYSQL_DATABASE: vo
+      MYSQL_USER: vo
+      MYSQL_PASSWORD: vo
+    command: ["--default-time-zone=+00:00", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    ports:
+      # 3307 agar tidak bentrok dengan MySQL lokal di 3306.
+      - "3307:3306"
+    volumes:
+      - vo-mysqldata:/var/lib/mysql
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uvo", "-pvo"]
+      interval: 3s
+      retries: 20
+volumes:
+  vo-mysqldata:
