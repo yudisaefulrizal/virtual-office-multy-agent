@@ -86,3 +86,23 @@ export async function updateAgent(
   });
   await promoteAllObjectives(ctx);
 }
+
+/**
+ * Owner mencabut provider: key dihapus, runtime dilepas, dan agent yang memakainya menunggu provider
+ * (bisa dipindah ke runtime lain atau dipasang kembali). Task yang sedang berjalan boleh selesai.
+ */
+export async function removeProvider(ctx: OfficeContext, id: ProviderId) {
+  await withTx(ctx, async (tx, emit) => {
+    const [existing] = await tx.select().from(providers).where(eq(providers.id, id));
+    if (!existing) throw new UserError('Provider belum dipasang');
+    await tx.delete(providers).where(eq(providers.id, id));
+    const users = await tx.select().from(agents).where(and(eq(agents.runtime, id), eq(agents.status, 'active')));
+    for (const a of users) {
+      await tx.update(agents).set({ status: 'waiting_provider' }).where(eq(agents.id, a.id));
+      emit({ type: 'agent.updated', entityType: 'agent', entityId: a.id, actor: 'orchestrator', payload: { name: a.name, runtime: id, status: 'waiting_provider', reason: 'Provider dicabut Owner' } });
+    }
+    emit({ type: 'provider.removed', entityType: 'runtime', entityId: id, actor: 'owner' });
+  });
+  ctx.runtimes.delete(id);
+  ctx.limits.delete(id);
+}

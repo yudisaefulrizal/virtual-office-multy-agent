@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { agents, approvals, tasks, toolExecutions } from '../src/db/schema';
+import { agents, approvals, tasks, toolCredentials, toolExecutions } from '../src/db/schema';
 import { Gateway } from '../src/gateway/gateway';
 import type { Caller } from '../src/gateway/tools';
 import { buildServer } from '../src/interface/http/server';
@@ -144,5 +144,14 @@ describe('Budget objective', () => {
     const trace = await objectiveTrace(o.ctx, objectiveId);
     expect(trace?.objective.status).toBe('completed');
     expect(trace?.budget.spentUsdMicros).toBe(8_000_000);
+  });
+
+  it('credential tool bisa dicabut Owner dan tidak bisa dicabut dua kali', async () => {
+    const o = await office();
+    const gw = new Gateway(o.ctx, 'http://x');
+    await gw.setCredential('instagram_publish', 'tok-secret-1234', { ig_user_id: '1' });
+    await gw.removeCredential('instagram_publish');
+    expect(await o.db.select().from(toolCredentials)).toHaveLength(0);
+    await expect(gw.removeCredential('instagram_publish')).rejects.toThrow(/belum dipasang/);
   });
 });

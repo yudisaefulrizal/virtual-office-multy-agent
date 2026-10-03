@@ -4,7 +4,7 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { agents, providers } from '../src/db/schema';
-import { listProviders, setProvider } from '../src/orchestrator/providers';
+import { listProviders, removeProvider, setProvider } from '../src/orchestrator/providers';
 import { OpenRouterRuntime } from '../src/runtimes/openrouter';
 import type { RunRequest } from '../src/runtimes/runtime';
 import { SecretBox } from '../src/secrets';
@@ -110,5 +110,19 @@ describe('Provider OpenRouter dipasang Owner', () => {
     expect(await listProviders(o.ctx)).toEqual([expect.objectContaining({ id: 'openrouter', configured: true, apiKeyLast4: '1234' })]);
     expect(JSON.stringify(await listProviders(o.ctx))).not.toContain('abcd1234');
     expect(o.emitted.map((e) => e.type)).toEqual(expect.arrayContaining(['provider.configured', 'agent.activated']));
+  });
+
+  it('mencabut provider: key dihapus, runtime dilepas, agent kembali menunggu provider', async () => {
+    const o = await setupOffice();
+    cleanup = async () => (await o.worker.stop(), await o.close());
+    await expect(removeProvider(o.ctx, 'openrouter')).rejects.toThrow(/belum dipasang/);
+    await setProvider(o.ctx, 'openrouter', { apiKey: 'sk-or-abcd1234', defaultModel: 'vendor/model' });
+    await removeProvider(o.ctx, 'openrouter');
+
+    expect(await o.db.select().from(providers)).toHaveLength(0);
+    expect(o.ctx.runtimes.has('openrouter')).toBe(false);
+    const [mr] = await o.db.select().from(agents).where(eq(agents.name, 'Market Researcher'));
+    expect(mr?.status).toBe('waiting_provider');
+    expect(o.emitted.some((e) => e.type === 'provider.removed')).toBe(true);
   });
 });

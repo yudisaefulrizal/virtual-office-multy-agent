@@ -18,7 +18,7 @@ import { setObjectiveBudget } from '../../orchestrator/budget';
 import { setSchedule } from '../../orchestrator/scheduler';
 import { usageStats } from '../../orchestrator/stats';
 import { registerMcp } from '../../gateway/mcp';
-import { PROVIDER_IDS, listProviders, setProvider, updateAgent } from '../../orchestrator/providers';
+import { PROVIDER_IDS, listProviders, removeProvider, setProvider, updateAgent } from '../../orchestrator/providers';
 import { decisionDetail, listApprovals, listDecisions, listObjectives, listTools, objectiveTrace, officeView } from '../../orchestrator/queries';
 import { type SettingKey, getAllSettings, setSetting } from '../../orchestrator/settings';
 import { approveDecision, rejectDecision, reviseDecision } from '../../orchestrator/strategy';
@@ -73,6 +73,12 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     const { id } = z.object({ id: z.enum(PROVIDER_IDS) }).parse(req.params);
     const body = z.object({ apiKey: z.string().trim().max(500).optional(), defaultModel: z.string().trim().min(3).max(128) }).parse(req.body);
     await setProvider(ctx, id, body);
+    return listProviders(ctx);
+  });
+
+  app.delete('/api/providers/:id', async (req) => {
+    const { id } = z.object({ id: z.enum(PROVIDER_IDS) }).parse(req.params);
+    await removeProvider(ctx, id);
     return listProviders(ctx);
   });
 
@@ -160,6 +166,13 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     const body = z.object({ secret: z.string().trim().max(2000).optional(), config: z.record(z.string(), z.string().max(200)).default({}) }).parse(req.body);
     if (!ctx.gateway) return reply.status(503).send({ error: 'Gateway tidak aktif' });
     await ctx.gateway.setCredential(id, body.secret, body.config);
+    return listTools(ctx);
+  });
+
+  app.delete('/api/tools/:id/credential', async (req, reply) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    if (!ctx.gateway) return reply.status(503).send({ error: 'Gateway tidak aktif' });
+    await ctx.gateway.removeCredential(id);
     return listTools(ctx);
   });
 

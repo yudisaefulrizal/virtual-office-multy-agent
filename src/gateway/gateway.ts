@@ -193,6 +193,15 @@ export class Gateway {
     });
   }
 
+  async removeCredential(toolId: string) {
+    await withTx(this.ctx, async (tx, emit) => {
+      const [existing] = await tx.select().from(toolCredentials).where(eq(toolCredentials.toolId, toolId));
+      if (!existing) throw new UserError('Credential belum dipasang');
+      await tx.delete(toolCredentials).where(eq(toolCredentials.toolId, toolId));
+      emit({ type: 'tool.credential_removed', entityType: 'tool', entityId: toolId, actor: 'owner' });
+    });
+  }
+
   async setCredential(toolId: string, secret: string | undefined, config: Record<string, string>) {
     const tool = toolById(toolId);
     if (!tool?.credential) throw new UserError('Tool ini tidak memakai credential');

@@ -814,3 +814,7 @@ Arah produk: Owner **tidak mengoperasikan** kantor. Owner hanya mengisi piagam (
 - **Halaman Perusahaan** (`#/company`): form piagam, tombol Jalankan/Jeda, status (pekerjaan berjalan, agenda berikutnya, budget, kuota), dan daftar pekerjaan yang diputuskan perusahaan. Halaman Kantor tetap menampilkan "Perlu Anda" hanya untuk eskalasi.
 
 Batas yang belum diuji dengan Claude sungguhan: mutu agenda CEO dan apakah 20% cadangan kuota cukup. Belum ada evaluasi hasil (mis. Instagram Insights) yang menjadi umpan balik ke agenda berikutnya; saat ini CEO hanya melihat ringkasan hasil akhir sebelumnya.
+
+## 18. Halaman Akses (2026-10-03)
+
+Semua kunci/akun yang bisa dipakai AI dikelola di `#/access`: Claude CLI (hanya status; login ada di terminal), provider API (OpenRouter), dan credential tool Gateway (Instagram). Rahasia hanya bisa dimasukkan, diganti, atau dihapus; API hanya mengembalikan 4 karakter terakhir. `DELETE /api/providers/:id` melepas runtime dan mengembalikan agent yang memakainya ke `waiting_provider`; `DELETE /api/tools/:id/credential` mencabut akses tool. Integrasi baru otomatis muncul bila tool dengan `credential` ditambahkan di `gateway/tools.ts`.

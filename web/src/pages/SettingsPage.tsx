@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, useLive, type AgentRow, type ProviderInfo, type ToolInfo } from '../api';
+import { api, useLive, type AgentRow, type ProviderInfo } from '../api';
 import { OrgSection } from './OrgSection';
 import { PerformanceSection } from './PerformanceSection';
 
@@ -97,8 +97,11 @@ export function SettingsPage() {
         </section>
       </section>
       <aside className="side">
-        {tools.data?.filter((t) => t.credential).map((t) => <ToolCredentialForm key={t.id} tool={t} onSaved={tools.refresh} />)}
-        {providers.data?.map((p) => <ProviderForm key={p.id} provider={p} onSaved={providers.refresh} />)}
+        <section className="card" aria-labelledby="access-link">
+          <h2 id="access-link">API key dan akses</h2>
+          <p className="small muted" style={{ margin: 0 }}>Kunci dan akun yang dipakai AI (OpenRouter, Instagram, dsb.) sekarang dikelola di satu halaman khusus.</p>
+          <a className="btn btn-ghost" href="#/access">Buka halaman Akses</a>
+        </section>
       </aside>
     </main>
   );
@@ -169,96 +172,5 @@ function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers
         </div>
       </td>
     </tr>
-  );
-}
-
-function ProviderForm({ provider, onSaved }: { provider: ProviderInfo; onSaved: () => void }) {
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState(provider.defaultModel ?? '');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setMsg(null);
-    try {
-      await api.setProvider(provider.id, { apiKey: apiKey.trim() || undefined, defaultModel: model.trim() });
-      setApiKey('');
-      setMsg({ ok: true, text: 'Tersimpan. Agent yang menunggu provider ini sudah diaktifkan.' });
-      onSaved();
-    } catch (err) {
-      setMsg({ ok: false, text: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="card" onSubmit={submit} aria-labelledby={`prov-${provider.id}`}>
-      <div className="row between">
-        <h2 id={`prov-${provider.id}`}>OpenRouter</h2>
-        <span className="chip">{provider.configured ? `Terpasang · ••••${provider.apiKeyLast4}` : 'Belum dipasang'}</span>
-      </div>
-      <div className="field">
-        <label htmlFor={`key-${provider.id}`}>API key{provider.configured ? ' (kosongkan untuk tetap memakai key lama)' : ''}</label>
-        <input id={`key-${provider.id}`} type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-or-…" />
-      </div>
-      <div className="field">
-        <label htmlFor={`dm-${provider.id}`}>Model default</label>
-        <input id={`dm-${provider.id}`} value={model} onChange={(e) => setModel(e.target.value)} placeholder="mis. vendor/nama-model" required minLength={3} />
-      </div>
-      <p className="small muted" style={{ margin: 0 }}>Key disimpan terenkripsi oleh Virtual Office dan tidak pernah dikirim ke agent.</p>
-      {msg && <p className={msg.ok ? 'small' : 'error'} style={{ margin: 0 }}>{msg.text}</p>}
-      <button className="btn" type="submit" disabled={busy || model.trim().length < 3 || (!provider.configured && !apiKey.trim())}>
-        {busy ? 'Menyimpan…' : 'Simpan provider'}
-      </button>
-    </form>
-  );
-}
-
-function ToolCredentialForm({ tool, onSaved }: { tool: ToolInfo; onSaved: () => void }) {
-  const cred = tool.credential!;
-  const [secret, setSecret] = useState('');
-  const [config, setConfig] = useState<Record<string, string>>(cred.config);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setMsg(null);
-    try {
-      await api.setToolCredential(tool.id, { secret: secret.trim() || undefined, config });
-      setSecret('');
-      setMsg({ ok: true, text: 'Tersimpan.' });
-      onSaved();
-    } catch (err) {
-      setMsg({ ok: false, text: (err as Error).message });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="card" onSubmit={submit} aria-labelledby={`tool-${tool.id}`}>
-      <div className="row between">
-        <h2 id={`tool-${tool.id}`}>{tool.title}</h2>
-        <span className="chip">{cred.configured ? `Terpasang · ••••${cred.last4}` : 'Belum dipasang'}</span>
-      </div>
-      <div className="field">
-        <label htmlFor={`sec-${tool.id}`}>{cred.label}{cred.configured ? ' (kosongkan untuk tetap memakai yang lama)' : ''}</label>
-        <input id={`sec-${tool.id}`} type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
-      </div>
-      {cred.configFields.map((f) => (
-        <div key={f.key} className="field">
-          <label htmlFor={`cfg-${tool.id}-${f.key}`}>{f.label}</label>
-          <input id={`cfg-${tool.id}-${f.key}`} value={config[f.key] ?? ''} onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })} />
-        </div>
-      ))}
-      <p className="small muted" style={{ margin: 0 }}>Disimpan terenkripsi. Hanya Gateway yang memakainya, setelah Anda menyetujui permintaan agent.</p>
-      {msg && <p className={msg.ok ? 'small' : 'error'} style={{ margin: 0 }}>{msg.text}</p>}
-      <button className="btn" type="submit" disabled={busy || (!cred.configured && !secret.trim())}>{busy ? 'Menyimpan…' : 'Simpan credential'}</button>
-    </form>
   );
 }

@@ -458,6 +458,8 @@ export const api = {
     if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
   },
   updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  removeProvider: (id: string) => request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'DELETE' }),
+  removeToolCredential: (id: string) => request<ToolInfo[]>(`/api/tools/${id}/credential`, { method: 'DELETE' }),
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>
     request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   agents: () => request<AgentRow[]>('/api/agents'),

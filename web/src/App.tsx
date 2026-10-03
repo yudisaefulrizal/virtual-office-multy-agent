@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, useLive } from './api';
+import { AccessPage } from './pages/AccessPage';
 import { CompanyPage } from './pages/CompanyPage';
 import { DecisionPage, DecisionsPage } from './pages/DecisionPage';
 import { KnowledgePage } from './pages/KnowledgePage';
@@ -67,7 +68,9 @@ export function App() {
   const decisionMatch = route.match(/^\/decisions\/([0-9a-f-]{36})$/);
   const section = route.startsWith('/objectives')
     ? 'objectives'
-    : route.startsWith('/company')
+    : route.startsWith('/access')
+      ? 'access'
+      : route.startsWith('/company')
       ? 'company'
       : route.startsWith('/decisions')
       ? 'decisions'
@@ -117,6 +120,9 @@ export function App() {
             <a href="#/knowledge" aria-current={section === 'knowledge' ? 'page' : undefined}>
               Knowledge
             </a>
+            <a href="#/access" aria-current={section === 'access' ? 'page' : undefined}>
+              Akses
+            </a>
             <a href="#/settings" aria-current={section === 'settings' ? 'page' : undefined}>
               Pengaturan
             </a>
@@ -128,6 +134,8 @@ export function App() {
         <ObjectivePage id={objectiveMatch[1]!} />
       ) : decisionMatch ? (
         <DecisionPage id={decisionMatch[1]!} />
+      ) : section === 'access' ? (
+        <AccessPage />
       ) : section === 'company' ? (
         <CompanyPage />
       ) : section === 'decisions' ? (

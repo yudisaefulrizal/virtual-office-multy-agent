@@ -209,3 +209,6 @@ select { font: inherit; padding: 9px 10px; border: 1px solid var(--grey); backgr
 /* Halaman Perusahaan */
 .company-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); gap: 16px; align-items: start; }
 @media (max-width: 900px) { .company-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Halaman Akses */
+.access-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: 16px; align-items: start; }

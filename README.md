@@ -17,6 +17,7 @@ Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasi
 | Tool Gateway | MCP milik Virtual Office: izin per role, tool berisiko menunggu persetujuan Owner, credential terenkripsi |
 | Budget | Batas biaya API nyata per objective; lewat batas → task ditunda |
 | Scheduler | Objective berulang (harian/interval) tanpa mengulang strategi dan perencanaan |
+| Akses untuk AI | Halaman **Akses**: satu tempat untuk API key OpenRouter dan akses Instagram (pasang, ganti, hapus). Disimpan terenkripsi, tidak pernah ditampilkan atau dikirim ke agent; menampilkan siapa yang memakainya |
 | Perusahaan otonom | Halaman **Perusahaan**: Owner cukup mengisi jenis usaha, produk, dan batas, lalu menjalankan. CEO menyusun agenda sendiri, objective dikerjakan tanpa persetujuan selama dalam batas (budget, jumlah pekerjaan, larangan); hanya hal di luar batas yang dieskalasi ke Owner |
 | Tenaga kerja adaptif | Agent bisa dirumahkan, diaktifkan kembali, atau dipensiunkan (arsip); tenure permanent/on-demand/sementara; HRD memakai ulang staf dirumahkan sebelum merekrut baru dan merumahkan staf berlebih yang menganggur; halaman Pengaturan menampilkan performa dan saran HRD |
 | Pembersihan | Objective yang sudah selesai/gagal/dibatalkan bisa dihapus dari halamannya (task, sesi, hasil, dan folder kerja ikut terhapus; knowledge tetap) |
