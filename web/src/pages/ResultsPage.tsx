@@ -51,46 +51,42 @@ export function ResultsPage() {
   if (!data) return <main className="page"><p className="muted">Memuat…</p></main>;
 
   return (
-    <main className="page" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <header className="row wrap between" style={{ gap: 16 }}>
-        <h1 className="page-title">Hasil</h1>
-        {rows.length > 0 && <input type="search" aria-label="Cari hasil" placeholder="Cari" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 220, minHeight: 40 }} />}
-      </header>
-
-      {data.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>Belum ada hasil.</p>
-      ) : rows.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>Tidak ada yang cocok.</p>
-      ) : (
-        <div className="results-grid">
-          <div className="card list" role="list">
-            {rows.map(({ objective, output }) => {
-              const on = current?.output.taskId === output.taskId;
-              const [label, tone] = pillOf(objective);
-              return (
-                <button key={output.taskId} type="button" role="listitem" className={`res-row${on ? ' on' : ''}`} onClick={() => setPicked({ taskId: output.taskId, fileId: null })}>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <strong style={{ display: 'block' }}>{output.title}</strong>
-                    <span className="muted small">{objective.title} · {output.completedAt ? dateTime(output.completedAt) : ''}</span>
-                  </span>
-                  <span className={`pill ${tone}`}>{label}</span>
-                </button>
-              );
-            })}
-          </div>
-          <Viewer current={current} onPickFile={(taskId, fileId) => setPicked({ taskId, fileId })} />
+    <main className="results">
+      <section className="card list results-list" aria-label="Daftar hasil">
+        <div style={{ padding: 12, borderBottom: '1px solid var(--line-soft)', position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
+          <input type="search" aria-label="Cari hasil" placeholder="Cari hasil" value={query} onChange={(e) => setQuery(e.target.value)} style={{ minHeight: 38 }} />
         </div>
-      )}
+        {data.length === 0 ? (
+          <p className="muted" style={{ margin: 0, padding: 16 }}>Belum ada hasil.</p>
+        ) : rows.length === 0 ? (
+          <p className="muted" style={{ margin: 0, padding: 16 }}>Tidak ada yang cocok.</p>
+        ) : (
+          rows.map(({ objective, output }) => {
+            const on = current?.output.taskId === output.taskId;
+            const [label, tone] = pillOf(objective);
+            return (
+              <button key={output.taskId} type="button" className={`res-row${on ? ' on' : ''}`} aria-pressed={on} onClick={() => setPicked({ taskId: output.taskId, fileId: null })}>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <strong style={{ display: 'block' }}>{output.title}</strong>
+                  <span className="muted small">{objective.title}{output.completedAt ? ` · ${dateTime(output.completedAt)}` : ''}</span>
+                </span>
+                <span className={`pill ${tone}`}>{label}</span>
+              </button>
+            );
+          })
+        )}
+      </section>
+      <Viewer current={current} onPickFile={(taskId, fileId) => setPicked({ taskId, fileId })} />
     </main>
   );
 }
 
 function Viewer({ current, onPickFile }: { current: Pick | null; onPickFile: (taskId: string, fileId: string) => void }) {
-  if (!current) return <section className="card results-viewer" />;
+  if (!current) return <section className="card results-viewer"><p className="muted" style={{ margin: 0 }}>Pilih hasil di kiri.</p></section>;
   const { file, output, objective } = current;
   const supporting = objective.outputs.filter((x) => !x.final && x.files.length > 0);
   return (
-    <section className="card results-viewer" style={{ padding: 32, gap: 24 }}>
+    <section className="card results-viewer" style={{ padding: 28, gap: 20 }}>
       <div className="row wrap between" style={{ alignItems: 'flex-start', gap: 16 }}>
         <div style={{ minWidth: 0 }}>
           <h2 style={{ fontSize: 25, lineHeight: 1.2, fontWeight: 700, letterSpacing: '-0.015em', wordBreak: 'break-word' }}>{output.title}</h2>

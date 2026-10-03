@@ -27,13 +27,9 @@ export function OrgSection() {
   return (
     <section className="card" aria-labelledby="org">
       <h2 id="org">Organisasi</h2>
-      <p className="small muted" style={{ margin: 0 }}>
-        Setiap divisi adalah satu ruangan di kantor. HRD bisa mengusulkan divisi, role, dan staf baru; usulan itu menunggu persetujuan Anda di
-        kotak "Perlu Anda". Satu karyawan mengerjakan satu task pada satu waktu, jadi jumlah staf adalah kapasitas paralel yang sebenarnya.
-      </p>
       {error && <p className="error">{error}</p>}
       {data?.departments.map((d) => (
-        <div key={d.id} style={{ border: '1px solid var(--line)', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div key={d.id} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div className="row between wrap">
             <span className="row" style={{ gap: 8 }}>
               <span aria-hidden="true" style={{ width: 14, height: 14, background: d.color, border: '1px solid var(--ink)' }} />
@@ -156,10 +152,6 @@ function HiringRules({ limits, onSaved }: { limits: Settings; onSaved: () => voi
   return (
     <form className="field" onSubmit={save} style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 12 }}>
       <strong className="small">Aturan HRD menambah staf</strong>
-      <span className="small muted">
-        HRD menambah staf hanya bila ada task siap kerja yang menunggu, semua staf role itu sibuk, dan runtime-nya masih punya slot. Menambah
-        staf saat slot penuh tidak mempercepat apa pun, jadi tidak dilakukan.
-      </span>
       <div className="row wrap">
         <label htmlFor="hr-mode" className="small">Penambahan</label>
         <select id="hr-mode" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api, useLive } from './api';
 import { AccessPage } from './pages/AccessPage';
-import { CompanyPage } from './pages/CompanyPage';
+import { CompanyPage, ProfilePage } from './pages/CompanyPage';
 import { DecisionPage, DecisionsPage } from './pages/DecisionPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { ObjectivePage } from './pages/ObjectivePage';
@@ -23,56 +23,55 @@ function useHashRoute() {
 }
 
 const ICON: Record<string, ReactNode> = {
-  company: <><rect x="3" y="3" width="6" height="6" /><rect x="11" y="3" width="6" height="6" /><rect x="3" y="11" width="6" height="6" /><rect x="11" y="11" width="6" height="6" /></>,
-  office: <><rect x="3" y="4" width="14" height="12" /><path d="M3 10h14M10 4v12" /></>,
-  results: <><path d="M5 3h7l3 3v11H5z" /><path d="M12 3v3h3" /></>,
+  company: <><path d="M10 2.5l7 4v7l-7 4-7-4v-7z" /><path d="M3 6.5l7 4 7-4M10 10.5v7" /></>,
+  office: <><rect x="3" y="4" width="14" height="12" rx="1.5" /><path d="M3 10h14M10 4v12" /></>,
+  results: <><path d="M5 3h7l3 3v11H5z" /><path d="M12 3v3h3M8 10h4M8 13h4" /></>,
   access: <><circle cx="7" cy="10" r="3.5" /><path d="M10.5 10H17M15 10v3" /></>,
   costs: <path d="M4 16V9M10 16V4M16 16v-5" />,
   settings: <><circle cx="10" cy="10" r="2.5" /><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5 5l1.4 1.4M13.6 13.6L15 15M15 5l-1.4 1.4M6.4 13.6L5 15" /></>,
+  objectives: <><path d="M7 5h10M7 10h10M7 15h10" /><circle cx="3.5" cy="5" r=".8" /><circle cx="3.5" cy="10" r=".8" /><circle cx="3.5" cy="15" r=".8" /></>,
+  decisions: <><path d="M4 10.5l4 4 8-9" /></>,
+  knowledge: <><path d="M4 4.5A1.5 1.5 0 015.5 3H16v12H5.5A1.5 1.5 0 004 16.5z" /><path d="M4 16.5A1.5 1.5 0 005.5 18H16" /></>,
 };
-const Icon = ({ name }: { name: string }) => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">{ICON[name]}</svg>
+const Icon = ({ name, size = 20 }: { name: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON[name]}</svg>
 );
 
 const NAV = [
-  { id: 'company', href: '#/', label: 'Perusahaan' },
+  { id: 'company', href: '#/', label: 'Beranda' },
   { id: 'office', href: '#/office', label: 'Kantor' },
   { id: 'results', href: '#/results', label: 'Hasil' },
   { id: 'access', href: '#/access', label: 'Akses' },
   { id: 'summary', href: '#/summary', label: 'Biaya', icon: 'costs', hideSm: true },
-  { id: 'settings', href: '#/settings', label: 'Pengaturan', icon: 'settings', hideSm: true },
 ] as const;
 const MORE = [
   { id: 'objectives', href: '#/objectives', label: 'Objective' },
   { id: 'decisions', href: '#/decisions', label: 'Keputusan' },
-  { id: 'knowledge', href: '#/knowledge', label: 'Knowledge' },
+  { id: 'knowledge', href: '#/knowledge', label: 'Ilmu' },
+  { id: 'settings', href: '#/settings', label: 'Atur' },
 ];
 
 function sectionOf(route: string) {
-  if (route.startsWith('/objectives')) return 'objectives';
-  if (route.startsWith('/decisions')) return 'decisions';
-  if (route.startsWith('/settings')) return 'settings';
-  if (route.startsWith('/knowledge')) return 'knowledge';
-  if (route.startsWith('/summary')) return 'summary';
-  if (route.startsWith('/results')) return 'results';
-  if (route.startsWith('/access')) return 'access';
-  if (route.startsWith('/office')) return 'office';
+  for (const id of ['objectives', 'decisions', 'settings', 'knowledge', 'summary', 'results', 'access', 'office', 'profile']) {
+    if (route.startsWith(`/${id}`)) return id;
+  }
   return 'company';
 }
 
-function Sidebar({ section }: { section: string }) {
-  const { data } = useLive(api.office);
-  const needs = data?.inbox.length ?? 0;
+/** Logo: kubus voxel isometrik. */
+const Logo = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 2l9 5-9 5-9-5z" fill="#a9c3ff" />
+    <path d="M3 7l9 5v10l-9-5z" fill="#6e9bff" />
+    <path d="M21 7l-9 5v10l9-5z" fill="#3c5fc4" />
+  </svg>
+);
+
+function Rail({ section, needs }: { section: string; needs: number }) {
   return (
-    <aside className="sb">
-      <a href="#/" className="sb-brand">
-        <svg width="24" height="24" viewBox="0 0 28 28" fill="none" stroke="#111418" strokeWidth="2.4" aria-hidden="true">
-          <rect x="2" y="2" width="24" height="24" />
-          <path d="M2 12h10M12 2v6M12 12v14M18 12h8M18 12v5" />
-        </svg>
-        Virtual Office
-      </a>
-      <nav className="sb-nav" aria-label="Utama">
+    <aside className="rail" aria-label="Navigasi">
+      <a href="#/" className="rail-logo" aria-label="Virtual Office" style={{ minHeight: 40, width: 40 }}><Logo /></a>
+      <nav aria-label="Utama" style={{ display: 'contents' }}>
         {NAV.map((n) => (
           <a key={n.id} href={n.href} aria-current={section === n.id ? 'page' : undefined} className={'hideSm' in n && n.hideSm ? 'hide-sm' : undefined}>
             <Icon name={'icon' in n ? n.icon : n.id} />
@@ -81,15 +80,64 @@ function Sidebar({ section }: { section: string }) {
           </a>
         ))}
       </nav>
-      <div className="sb-sec">
+      <div className="rail-bottom">
+        <span className="rail-sep" />
         {MORE.map((m) => (
           <a key={m.id} href={m.href} aria-current={section === m.id ? 'page' : undefined}>
+            <Icon name={m.id} size={18} />
             {m.label}
           </a>
         ))}
-        {data?.forceRuntime && <span className="sb-note" style={{ marginTop: 8 }}>Mode {data.forceRuntime}</span>}
       </div>
     </aside>
+  );
+}
+
+function Kpi({ label, value, max, money }: { label: string; value: number; max: number; money?: boolean }) {
+  const fmt = (n: number) => (money ? `$${n.toFixed(n < 10 ? 2 : 0)}` : String(Math.round(n)));
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div className="kpi">
+      <span className="kpi-top">{label}<b>{fmt(value)}{max > 0 ? ` / ${fmt(max)}` : ''}</b></span>
+      <div className={`meter${pct >= 80 ? ' warn' : ''}`} role="img" aria-label={`${label}: ${fmt(value)}${max > 0 ? ` dari ${fmt(max)}` : ''}`}>
+        <span style={{ width: `${max > 0 ? pct : 0}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function TopBar({ needs }: { needs: number }) {
+  const { data, refresh } = useLive(api.company);
+  const [busy, setBusy] = useState(false);
+  const c = data?.company;
+  const running = data?.state === 'running';
+  const work = data?.objectives.filter((o) => o.mode !== 'agenda' && !['completed', 'failed', 'cancelled'].includes(o.status)).length ?? 0;
+  const toggle = async () => {
+    setBusy(true);
+    await api.companyAction(running ? 'pause' : 'start').catch(() => undefined);
+    setBusy(false);
+    refresh();
+  };
+  return (
+    <header className="topbar">
+      <div className="tb-name">
+        <span className={`live${running ? '' : ' off'}`} aria-hidden="true" />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c?.name || 'Virtual Office'}</span>
+        {data && data.state !== 'unset' && <span className={`pill ${running ? 'pill-green' : 'pill-grey'}`}>{running ? 'Berjalan' : 'Dijeda'}</span>}
+      </div>
+      {c && (
+        <div className="tb-kpis">
+          <Kpi label="Pekerjaan" value={work} max={c.maxActiveObjectives} />
+          <Kpi label="Kuota" value={data?.quota?.used ?? 0} max={data?.quota?.max ?? 0} />
+          <Kpi label="Budget" value={data?.spentUsd ?? 0} max={c.monthlyBudgetUsd} money />
+        </div>
+      )}
+      <div className="tb-actions">
+        {needs > 0 && <a className="btn btn-sm btn-amber" href="#/">Perlu Anda · {needs}</a>}
+        {c && <a className="btn btn-sm btn-ghost" href="#/profile">Profil</a>}
+        {c && <button type="button" className={`btn btn-sm ${running ? 'btn-ghost' : ''}`} disabled={busy} onClick={toggle}>{running ? 'Jeda' : 'Jalankan'}</button>}
+      </div>
+    </header>
   );
 }
 
@@ -98,11 +146,14 @@ export function App() {
   const objectiveMatch = route.match(/^\/objectives\/([0-9a-f-]{36})$/);
   const decisionMatch = route.match(/^\/decisions\/([0-9a-f-]{36})$/);
   const section = sectionOf(route);
+  const office = useLive(api.office);
+  const needs = office.data?.inbox.length ?? 0;
 
   return (
     <div className="shell">
-      <Sidebar section={section} />
+      <Rail section={section} needs={needs} />
       <div className="shell-main">
+        <TopBar needs={needs} />
         {objectiveMatch ? (
           <ObjectivePage id={objectiveMatch[1]!} />
         ) : decisionMatch ? (
@@ -123,6 +174,8 @@ export function App() {
           <AccessPage />
         ) : section === 'office' ? (
           <OfficePage />
+        ) : section === 'profile' ? (
+          <ProfilePage />
         ) : (
           <CompanyPage />
         )}

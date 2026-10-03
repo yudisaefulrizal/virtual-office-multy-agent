@@ -552,7 +552,7 @@ export function OfficeScene({ floor, agents, runtimes, events, meeting, deptColo
   return (
     <div className="scene-wrap">
       <Canvas orthographic shadows camera={{ position: [floor.w / 2 + 16, 16, floor.d / 2 + 16], zoom: 30, near: -100, far: 300 }}>
-        <color attach="background" args={['#1c222b']} />
+        <color attach="background" args={['#0e131b']} />
         <ambientLight intensity={0.75} />
         <directionalLight position={[floor.w + 8, 30, floor.d + 4]} intensity={1.2} castShadow shadow-mapSize={[2048, 2048]}>
           <orthographicCamera attach="shadow-camera" args={[-30, 30, 30, -30, 1, 120]} />

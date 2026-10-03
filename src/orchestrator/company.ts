@@ -231,7 +231,7 @@ export async function companyStatus(ctx: OfficeContext, now = new Date()) {
     waiting,
     nextAgendaAt,
     spentUsd: spent,
-    results: (await listResults(ctx)).filter((r) => all.some((o) => o.id === r.id)).slice(0, 6).flatMap((r) => r.outputs.filter((o) => o.final).map((o) => ({ objectiveId: r.id, title: o.title, summary: o.summary, status: r.status, at: o.completedAt }))).slice(0, 3),
+    results: (await listResults(ctx)).filter((r) => all.some((o) => o.id === r.id)).slice(0, 12).flatMap((r) => r.outputs.filter((o) => o.final).map((o) => ({ objectiveId: r.id, title: `${r.title}`, summary: o.title, status: r.status, at: o.completedAt }))).slice(0, 10),
     quota: quota ? { used: quota.used, max: quota.max } : null,
     objectives: all.slice(0, 20).map((o) => ({
       id: o.id,

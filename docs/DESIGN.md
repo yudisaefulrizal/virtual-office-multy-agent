@@ -840,3 +840,13 @@ Dirancang di Claude Design (kanvas "Virtual Office UI"), lalu diterapkan:
 - **Sistem visual**: Plus Jakarta Sans + JetBrains Mono (angka), skala 1,25, grid 8 px, warna hanya untuk status (amber = perlu Anda, hijau = berjalan/selesai, biru = bekerja), tombol utama hitam satu per area. Teks penjelasan dibuang; label dan angka saja.
 - **Kantor**: panggung gelap dengan panel detail karyawan di samping; inbox, aktivitas, dan objective terbaru pindah ke beranda.
 - **Hasil**: daftar hasil akhir + pratinjau; **Akses**: daftar baris dengan satu aksi per integrasi.
+
+## 21. Pusat komando gelap (2026-10-03)
+
+Desain ulang kedua, langsung di aplikasi:
+- **Tema gelap** dengan token di `styles.css` (biru = bekerja, amber = perlu Anda, hijau = berjalan/selesai). Satu skala tipe 1,25, radius 8/12/14.
+- **Rel ikon 76 px** (bukan sidebar 240 px) + **bilah atas** tetap berisi status perusahaan, tiga KPI dengan meter (pekerjaan, kuota, budget), tombol amber "Perlu Anda", Profil, dan Jeda/Jalankan. Di ponsel rel menjadi tab bawah.
+- **Beranda = pusat komando** setinggi layar tanpa scroll halaman: kantor 3D sebagai panggung utama (kontrol mengambang: lantai, hitungan status, kartu karyawan terpilih, tombol layar penuh), kolom kanan (Perlu Anda, pekerjaan berjalan, aktivitas yang mengisi sisa tinggi), dan lajur hasil berupa kartu 3D (perspektif CSS) diawali kartu "Agenda berikutnya".
+- **Onboarding dan Profil**: formulir di kiri, kantor 3D hidup di kanan.
+- **Hasil** setinggi layar (daftar + pratinjau dengan scroll sendiri), **Akses** berupa grid kartu yang selalu terbuka + tabel "Siapa memakai apa", **Pengaturan** dua kolom + tabel karyawan selebar layar.
+- `OfficeStage` (`pages/OfficePage.tsx`) dipakai bersama beranda, onboarding, dan halaman Kantor penuh.

@@ -45,7 +45,7 @@ export function ObjectivePage({ id }: { id: string }) {
           ['Token (in / out)', `${tokens(usage.inputTokens)} / ${tokens(usage.outputTokens)}`],
           [costKind === 'estimate' ? 'Biaya (estimasi)' : 'Biaya', usd(usage.costUsdMicros)],
         ].map(([k, v]) => (
-          <div key={k} style={{ background: '#fff', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div key={k} style={{ background: 'var(--surface)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
             <dt className="small muted">{k}</dt>
             <dd style={{ margin: 0, fontWeight: 500 }}>{v}</dd>
           </div>
@@ -163,7 +163,7 @@ function Pipeline({ tasks, superseded }: { tasks: TraceTask[]; superseded: Set<s
     <ol className="pipeline" aria-label="Tahapan">
       {groups.map((group, i) => (
         <li key={i}>
-          <div className="stage">
+          <div className="stage-col">
             {group.map((t) => {
               const st = TASK_STATUS[t.status] ?? TASK_STATUS.pending!;
               return (

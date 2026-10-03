@@ -21,10 +21,7 @@ function QuotaRules() {
   return (
     <section className="card" aria-labelledby="quota">
       <h2 id="quota">Kuota Claude CLI</h2>
-      <p className="small muted" style={{ margin: 0 }}>
-        Pengaman Virtual Office: jumlah run per jendela 5 jam. Kuota langganan Pro sebenarnya dihitung Anthropic, dan bila habis task otomatis ditunda
-        lalu dilanjutkan, jadi batas ini boleh dilonggarkan. {q ? `Terpakai sekarang: ${q.used}/${q.max} run.` : 'Saat ini tanpa batas.'}
-      </p>
+      <span className="mono small muted">{q ? `${q.used}/${q.max} run · 5 jam` : 'Tanpa batas'}</span>
       <div className="row wrap">
         <label htmlFor="quota-max" className="small">Maks run per jendela</label>
         <input id="quota-max" type="number" min={-1} max={1000} value={shown} onChange={(e) => setValue(Number(e.target.value))} style={{ width: 90 }} />
@@ -42,42 +39,15 @@ export function SettingsPage() {
   const tools = useLive(api.tools);
 
   return (
-    <main className="page split">
-      <section className="main">
-        <QuotaRules />
+    <main className="settings">
+      <div className="settings-col">
         <OrgSection />
+      </div>
+      <div className="settings-col">
+        <QuotaRules />
         <PerformanceSection />
-        <section className="card" aria-labelledby="team">
-          <h2 id="team">Karyawan</h2>
-          <p className="small muted" style={{ margin: 0 }}>
-            Runtime menentukan siapa yang menjalankan agent. <span className="mono">claude-cli</span> bisa membaca/menulis file dan riset web;{' '}
-            <span className="mono">openrouter</span> hanya bernalar, cocok untuk konsultasi eksekutif dan perencanaan, dan menghemat kuota Claude.
-          </p>
-          {agents.error && <p className="error">{agents.error}</p>}
-          <div className="table-box">
-            <table style={{ minWidth: 720 }}>
-              <thead>
-                <tr>
-                  <th scope="col">Agent</th>
-                  <th scope="col">Runtime</th>
-                  <th scope="col">Model</th>
-                  <th scope="col">Status</th>
-                  <th scope="col"><span className="sr-only">Aksi</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {agents.data?.map((a) => (
-                  <AgentEditor key={a.id} agent={a} providers={providers.data ?? []} onSaved={agents.refresh} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
         <section className="card" aria-labelledby="tools">
           <h2 id="tools">Tool Gateway</h2>
-          <p className="small muted" style={{ margin: 0 }}>
-            Agent memakai tool eksternal lewat Gateway Virtual Office, bukan langsung. Tool berisiko tinggi tidak dijalankan sampai Anda menyetujuinya.
-          </p>
           <div className="table-box">
             <table style={{ minWidth: 560 }}>
               <thead>
@@ -86,8 +56,8 @@ export function SettingsPage() {
               <tbody>
                 {tools.data?.map((t) => (
                   <tr key={t.id}>
-                    <td><strong>{t.title}</strong><div className="small muted">{t.description}</div></td>
-                    <td>{t.risk === 'high' ? <span style={{ color: 'var(--orange-ink)', fontWeight: 600 }}>Tinggi · butuh persetujuan</span> : 'Rendah'}</td>
+                    <td><strong>{t.title}</strong></td>
+                    <td>{t.risk === 'high' ? <span style={{ color: 'var(--orange-ink)', fontWeight: 600 }}>Perlu persetujuan</span> : 'Rendah'}</td>
                     <td className="mono small">{t.roles.join(', ')}</td>
                   </tr>
                 ))}
@@ -95,14 +65,29 @@ export function SettingsPage() {
             </table>
           </div>
         </section>
+      </div>
+        <section className="card" aria-labelledby="team" style={{ gridColumn: '1 / -1' }}>
+        <h2 id="team">Karyawan</h2>
+        {agents.error && <p className="error">{agents.error}</p>}
+        <div className="table-box">
+          <table style={{ minWidth: 720 }}>
+            <thead>
+              <tr>
+                <th scope="col">Agent</th>
+                <th scope="col">Runtime</th>
+                <th scope="col">Model</th>
+                <th scope="col">Status</th>
+                <th scope="col"><span className="sr-only">Aksi</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {agents.data?.map((a) => (
+                <AgentEditor key={a.id} agent={a} providers={providers.data ?? []} onSaved={agents.refresh} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
-      <aside className="side">
-        <section className="card" aria-labelledby="access-link">
-          <h2 id="access-link">API key dan akses</h2>
-          <p className="small muted" style={{ margin: 0 }}>Kunci dan akun yang dipakai AI (OpenRouter, Instagram, dsb.) sekarang dikelola di satu halaman khusus.</p>
-          <a className="btn btn-ghost" href="#/access">Buka halaman Akses</a>
-        </section>
-      </aside>
     </main>
   );
 }

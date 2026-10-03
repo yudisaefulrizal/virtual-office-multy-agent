@@ -18,9 +18,8 @@ export function AccessPage() {
   const toolsWithCred = tools.data?.filter((t) => t.credential) ?? [];
 
   return (
-    <main className="page" style={{ maxWidth: 960, display: 'flex', flexDirection: 'column', gap: 32 }}>
-      <h1 className="page-title">Akses</h1>
-      <section className="card list" aria-label="Integrasi">
+    <main className="access" aria-label="Akses">
+      <>
         <Item icon="M4 5l5 5-5 5M11 15h5" title="Claude" sub={claude?.quota ? `Login terminal · ${claude.quota.used}/${claude.quota.max} run` : 'Login terminal'} pill={claude?.configured ? ['Siap', 'pill-green'] : ['Tidak ditemukan', 'pill-amber']} />
         {providers.data?.map((p) => (
           <ProviderItem key={p.id} provider={p} waiting={agents.data?.filter((a) => a.runtime === p.id && a.status === 'waiting_provider').length ?? 0} onChanged={() => (providers.refresh(), agents.refresh())} />
@@ -29,26 +28,58 @@ export function AccessPage() {
         {toolsWithCred.map((t) => (
           <ToolItem key={t.id} tool={t} onChanged={tools.refresh} />
         ))}
+      </>
+      <section className="card" aria-label="Pemakaian akses" style={{ gridColumn: '1 / -1' }}>
+        <div className="panel-head"><h2 className="label">Siapa memakai apa</h2></div>
+        <div className="usage-grid">
+          <div className="table-box">
+            <table>
+              <thead><tr><th scope="col">Karyawan</th><th scope="col">Runtime</th><th scope="col">Status</th></tr></thead>
+              <tbody>
+                {agents.data?.filter((a) => a.status !== 'retired').map((a) => (
+                  <tr key={a.id}>
+                    <td><strong style={{ fontWeight: 600 }}>{a.name}</strong></td>
+                    <td className="mono small">{a.runtime}{a.model ? ` · ${a.model}` : ''}</td>
+                    <td><span className={`pill ${a.status === 'active' ? 'pill-green' : a.status === 'waiting_provider' ? 'pill-amber' : 'pill-grey'}`}>{a.status === 'active' ? 'Aktif' : a.status === 'waiting_provider' ? 'Menunggu' : 'Dirumahkan'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="table-box">
+            <table>
+              <thead><tr><th scope="col">Tool</th><th scope="col">Role</th><th scope="col">Risiko</th></tr></thead>
+              <tbody>
+                {tools.data?.map((t) => (
+                  <tr key={t.id}>
+                    <td><strong style={{ fontWeight: 600 }}>{t.title}</strong></td>
+                    <td className="mono small">{t.roles.join(', ')}</td>
+                    <td><span className={`pill ${t.risk === 'high' ? 'pill-amber' : 'pill-grey'}`}>{t.risk === 'high' ? 'Tinggi' : 'Rendah'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
       {(providers.error || tools.error) && <p className="error">{providers.error ?? tools.error}</p>}
     </main>
   );
 }
 
-function Item({ icon, title, sub, pill, open, onToggle, children }: { icon: string; title: string; sub?: string; pill: [string, string]; open?: boolean; onToggle?: () => void; children?: ReactNode }) {
+function Item({ icon, title, sub, pill, children }: { icon: string; title: string; sub?: string; pill: [string, string]; open?: boolean; onToggle?: () => void; children?: ReactNode }) {
   return (
-    <div className="acc">
+    <section className="card" aria-label={title} style={{ gap: 18 }}>
       <div className="acc-head">
-        <span className="acc-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8"><path d={icon} /></svg></span>
-        <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+        <span className="acc-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={icon} /></svg></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <strong style={{ fontSize: 16, display: 'block' }}>{title}</strong>
-          {sub && <span className="muted">{sub}</span>}
+          <span className="muted small">{sub ?? '\u00a0'}</span>
         </div>
         <span className={`pill ${pill[1]}`}>{pill[0]}</span>
-        {onToggle && <button type="button" className="btn btn-ghost btn-sm" aria-expanded={open} onClick={onToggle}>{open ? 'Tutup' : 'Atur'}</button>}
       </div>
-      {open && <div className="acc-body">{children}</div>}
-    </div>
+      {children}
+    </section>
   );
 }
 

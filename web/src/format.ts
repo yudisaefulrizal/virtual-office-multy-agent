@@ -34,6 +34,18 @@ export const SESSION_STATUS: Record<string, string> = {
 };
 
 const EVENT_TEXT: Record<string, string> = {
+  'company.agenda_started': 'mulai menyusun agenda',
+  'company.agenda_created': 'menetapkan agenda baru',
+  'company.started': 'menjalankan perusahaan',
+  'company.paused': 'menjeda perusahaan',
+  'company.updated': 'mengubah profil perusahaan',
+  'agent.suspended': 'merumahkan karyawan',
+  'agent.reactivated': 'mengaktifkan kembali karyawan',
+  'agent.retired': 'memensiunkan karyawan',
+  'instagram.connected': 'menghubungkan Instagram',
+  'instagram.disconnected': 'memutus Instagram',
+  'objective.deleted': 'menghapus objective',
+  'quota.reset': 'mereset hitungan kuota',
   'objective.created': 'membuat objective',
   'objective.activated': 'mengaktifkan objective',
   'objective.completed': 'objective selesai',

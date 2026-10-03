@@ -17,7 +17,7 @@ export function SummaryPage() {
   return (
     <main className="page" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div className="row wrap between">
-        <h1 style={{ fontSize: 24, fontWeight: 600 }}>Ringkasan</h1>
+        <h1 className="page-title">Biaya</h1>
         <div role="group" aria-label="Rentang waktu" className="row" style={{ gap: 0, border: '1px solid var(--grey)' }}>
           {RANGES.map((d) => (
             <button key={d} type="button" className={`btn ${d === days ? '' : 'btn-ghost'}`} style={{ border: 0, minWidth: 72 }} aria-pressed={d === days} onClick={() => setDays(d)}>
