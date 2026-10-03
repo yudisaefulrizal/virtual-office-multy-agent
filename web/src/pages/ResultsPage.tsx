@@ -1,170 +1,124 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, useLive, type ObjectiveResult, type ResultFile, type ResultOutput } from '../api';
-import { TASK_STATUS, dateTime } from '../format';
+import { dateTime } from '../format';
 import { Markdown } from '../markdown';
 
-const KIND: Record<string, string> = { work: 'Pekerjaan', research: 'Riset' };
 const size = (b: number) => (b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`);
 const ext = (n: string) => n.split('.').pop()?.toLowerCase() ?? '';
 
-type Pick = { file: ResultFile; output: ResultOutput; objective: ObjectiveResult } | { file: null; output: ResultOutput; objective: ObjectiveResult };
+type Pick = { file: ResultFile | null; output: ResultOutput; objective: ObjectiveResult };
+const pillOf = (o: ObjectiveResult): [string, string] => (o.status === 'completed' ? ['Selesai', 'pill-green'] : ['Berjalan', 'pill-blue']);
 
 export function ResultsPage() {
   const { data, error } = useLive(api.results);
   const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState<{ objectiveId: string; taskId: string; fileId: string | null } | null>(null);
-
-  // Di layar sempit pratinjau ada di bawah daftar: gulir ke sana saat Owner memilih sesuatu.
-  useEffect(() => {
-    if (picked && window.matchMedia('(max-width: 900px)').matches) document.querySelector('.results-viewer')?.scrollIntoView({ block: 'start' });
-  }, [picked]);
+  const [picked, setPicked] = useState<{ taskId: string; fileId: string | null } | null>(null);
 
   const q = query.trim().toLowerCase();
-  const filtered = useMemo(
+  const rows = useMemo(
     () =>
-      (data ?? [])
-        .map((o) => ({
-          ...o,
-          outputs: o.outputs.filter(
-            (x) => !q || o.title.toLowerCase().includes(q) || x.title.toLowerCase().includes(q) || x.files.some((f) => f.name.toLowerCase().includes(q)),
-          ),
-        }))
-        .filter((o) => o.outputs.length > 0),
+      (data ?? []).flatMap((objective) =>
+        objective.outputs
+          .filter((output) => output.final)
+          .filter((output) => !q || objective.title.toLowerCase().includes(q) || output.title.toLowerCase().includes(q) || output.files.some((f) => f.name.toLowerCase().includes(q)))
+          .map((output) => ({ objective, output })),
+      ),
     [data, q],
   );
 
-  // Pilihan otomatis: file pertama dari hasil terbaru, sampai Owner memilih sendiri.
   const current: Pick | null = useMemo(() => {
-    const lookup = (sel: NonNullable<typeof picked>): Pick | null => {
-      const objective = (data ?? []).find((o) => o.id === sel.objectiveId);
-      const output = objective?.outputs.find((x) => x.taskId === sel.taskId);
-      if (!objective || !output) return null;
-      const file = sel.fileId ? output.files.find((f) => f.id === sel.fileId) : null;
-      return sel.fileId && !file ? null : ({ file: file ?? null, output, objective } as Pick);
+    const find = (taskId: string) => {
+      for (const objective of data ?? []) {
+        const output = objective.outputs.find((x) => x.taskId === taskId);
+        if (output) return { objective, output };
+      }
+      return null;
     };
-    if (picked) return lookup(picked);
-    const o = filtered[0];
-    const out = o?.outputs.find((x) => x.final && x.files.length > 0) ?? o?.outputs.find((x) => x.final) ?? o?.outputs[0];
-    return o && out ? { file: out.files[0] ?? null, output: out, objective: o } : null;
-  }, [picked, data, filtered]);
+    if (picked) {
+      const hit = find(picked.taskId);
+      if (hit) return { ...hit, file: picked.fileId ? (hit.output.files.find((f) => f.id === picked.fileId) ?? null) : (hit.output.files[0] ?? null) };
+    }
+    const first = rows[0];
+    return first ? { ...first, file: first.output.files[0] ?? null } : null;
+  }, [picked, data, rows]);
+
+  // Layar sempit: pratinjau ada di bawah daftar, jadi gulir ke sana saat memilih.
+  useEffect(() => {
+    if (picked && window.matchMedia('(max-width: 900px)').matches) document.querySelector('.results-viewer')?.scrollIntoView({ block: 'start' });
+  }, [picked]);
 
   if (error && !data) return <main className="page"><p className="error">{error}</p></main>;
   if (!data) return <main className="page"><p className="muted">Memuat…</p></main>;
 
   return (
-    <main className="page" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="row wrap between">
-        <h1 style={{ fontSize: 24, fontWeight: 600 }}>Hasil kerja</h1>
-        <input
-          type="search"
-          aria-label="Cari hasil"
-          placeholder="Cari objective, task, atau nama file"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          style={{ minHeight: 44, minWidth: 260, padding: '8px 12px', border: '1px solid var(--grey)', font: 'inherit' }}
-        />
-      </div>
+    <main className="page" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <header className="row wrap between" style={{ gap: 16 }}>
+        <h1 className="page-title">Hasil</h1>
+        {rows.length > 0 && <input type="search" aria-label="Cari hasil" placeholder="Cari" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 220, minHeight: 40 }} />}
+      </header>
 
       {data.length === 0 ? (
-        <section className="card">
-          <p className="muted">Belum ada hasil. Hasil akhir tiap objective muncul di sini begitu pekerjaannya selesai.</p>
-        </section>
-      ) : filtered.length === 0 ? (
-        <p className="muted">Tidak ada hasil yang cocok dengan “{query}”.</p>
+        <p className="muted" style={{ margin: 0 }}>Belum ada hasil.</p>
+      ) : rows.length === 0 ? (
+        <p className="muted" style={{ margin: 0 }}>Tidak ada yang cocok.</p>
       ) : (
         <div className="results-grid">
-          <div className="results-list">
-            {filtered.map((o) => (
-              <ObjectiveCard key={o.id} objective={o} current={current} onPick={(output, file) => setPicked({ objectiveId: o.id, taskId: output.taskId, fileId: file?.id ?? null })} />
-            ))}
+          <div className="card list" role="list">
+            {rows.map(({ objective, output }) => {
+              const on = current?.output.taskId === output.taskId;
+              const [label, tone] = pillOf(objective);
+              return (
+                <button key={output.taskId} type="button" role="listitem" className={`res-row${on ? ' on' : ''}`} onClick={() => setPicked({ taskId: output.taskId, fileId: null })}>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <strong style={{ display: 'block' }}>{output.title}</strong>
+                    <span className="muted small">{objective.title} · {output.completedAt ? dateTime(output.completedAt) : ''}</span>
+                  </span>
+                  <span className={`pill ${tone}`}>{label}</span>
+                </button>
+              );
+            })}
           </div>
-          <Viewer current={current} />
+          <Viewer current={current} onPickFile={(taskId, fileId) => setPicked({ taskId, fileId })} />
         </div>
       )}
     </main>
   );
 }
 
-function ObjectiveCard({ objective: o, current, onPick }: { objective: ObjectiveResult; current: Pick | null; onPick: (o: ResultOutput, f: ResultFile | null) => void }) {
-  const st = TASK_STATUS[o.status] ?? TASK_STATUS.new!;
-  const finals = o.outputs.filter((x) => x.final);
-  const supporting = o.outputs.filter((x) => !x.final);
-  const finalFiles = finals.reduce((n, x) => n + x.files.length, 0);
-  const done = o.status === 'completed';
+function Viewer({ current, onPickFile }: { current: Pick | null; onPickFile: (taskId: string, fileId: string) => void }) {
+  if (!current) return <section className="card results-viewer" />;
+  const { file, output, objective } = current;
+  const supporting = objective.outputs.filter((x) => !x.final && x.files.length > 0);
   return (
-    <section className="card" style={{ gap: 10 }}>
-      <div className="row between" style={{ alignItems: 'flex-start' }}>
+    <section className="card results-viewer" style={{ padding: 32, gap: 24 }}>
+      <div className="row wrap between" style={{ alignItems: 'flex-start', gap: 16 }}>
         <div style={{ minWidth: 0 }}>
-          <a href={`#/objectives/${o.id}`} style={{ fontWeight: 600 }}>{o.title}</a>
-          <div className="row small muted" style={{ gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
-            <span className={`dot ${st.dot}`} />
-            <span style={{ color: st.tone, fontWeight: 500 }}>{st.label}</span>
-            {o.updatedAt && <span>· {dateTime(o.updatedAt)}</span>}
-          </div>
+          <h2 style={{ fontSize: 25, lineHeight: 1.2, fontWeight: 700, letterSpacing: '-0.015em', wordBreak: 'break-word' }}>{output.title}</h2>
+          <span className="muted">{output.agentName ?? objective.title}</span>
         </div>
-        {finalFiles > 0 && (
-          <a className="btn btn-ghost" style={{ minHeight: 36, padding: '6px 12px', flex: 'none' }} href={`/api/objectives/${o.id}/download`} download>
-            Unduh ZIP
-          </a>
-        )}
+        <span className="row">
+          {file && <a className="btn btn-ghost" href={`/api/artifacts/${file.id}/download`} download>Unduh</a>}
+          {objective.fileCount > 0 && <a className="btn btn-ghost" href={`/api/objectives/${objective.id}/download`} download>ZIP</a>}
+        </span>
       </div>
-      <div className="small" style={{ fontWeight: 600, color: done ? 'var(--green)' : 'var(--orange-ink)' }}>
-        {done ? 'Hasil akhir' : finals.length > 0 ? 'Hasil akhir (objective belum selesai, mungkin masih direvisi)' : 'Hasil akhir belum ada'}
-      </div>
-      {finals.map((out) => (
-        <OutputRows key={out.taskId} out={out} current={current} onPick={onPick} />
-      ))}
+      {output.files.length > 1 && (
+        <div className="row wrap" style={{ gap: 8 }}>
+          {output.files.map((f) => (
+            <button key={f.id} type="button" className={`fchip${file?.id === f.id ? ' on' : ''}`} onClick={() => onPickFile(output.taskId, f.id)}>{f.name} <span className="muted">{size(f.bytes)}</span></button>
+          ))}
+        </div>
+      )}
+      {file ? <FileView key={file.id} file={file} /> : <OutputSummary output={output} />}
       {supporting.length > 0 && (
-        <details style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>
-          <summary className="small muted" style={{ cursor: 'pointer' }}>Bahan pendukung ({supporting.length}): riset dan hasil antara</summary>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-            {supporting.map((out) => (
-              <OutputRows key={out.taskId} out={out} current={current} onPick={onPick} />
-            ))}
+        <details>
+          <summary className="muted small" style={{ cursor: 'pointer', fontWeight: 600 }}>Bahan pendukung ({supporting.length})</summary>
+          <div className="row wrap" style={{ gap: 8, marginTop: 12 }}>
+            {supporting.flatMap((x) => x.files.map((f) => (
+              <button key={f.id} type="button" className="fchip" onClick={() => onPickFile(x.taskId, f.id)}>{x.title}: {f.name}</button>
+            )))}
           </div>
         </details>
       )}
-    </section>
-  );
-}
-
-function OutputRows({ out, current, onPick }: { out: ResultOutput; current: Pick | null; onPick: (o: ResultOutput, f: ResultFile | null) => void }) {
-  return (
-    <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <button type="button" className="pick" aria-current={current?.output.taskId === out.taskId && !current.file ? 'true' : undefined} onClick={() => onPick(out, null)}>
-        <span style={{ fontWeight: 500 }}>{out.title}</span>
-        <span className="small muted">{KIND[out.kind] ?? out.kind}{out.agentName ? ` · ${out.agentName}` : ''}</span>
-      </button>
-      {out.files.map((f) => (
-        <div key={f.id} className="row" style={{ gap: 4 }}>
-          <button type="button" className="pick file" style={{ flex: 1 }} aria-current={current?.file?.id === f.id ? 'true' : undefined} onClick={() => onPick(out, f)}>
-            {f.name} <span className="muted">· {size(f.bytes)}</span>
-          </button>
-          <a className="small" href={`/api/artifacts/${f.id}/download`} download aria-label={`Unduh ${f.name}`}>Unduh</a>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Viewer({ current }: { current: Pick | null }) {
-  if (!current) return <section className="card"><p className="muted">Pilih file atau task untuk dilihat.</p></section>;
-  const { file, output, objective } = current;
-  return (
-    <section className="card results-viewer" style={{ gap: 12 }}>
-      <div className="row wrap between">
-        <div style={{ minWidth: 0 }}>
-          <div className="small muted">{objective.title} › {output.title}</div>
-          <h2 style={{ wordBreak: 'break-word' }}>{file ? file.name : output.title}</h2>
-        </div>
-        {file && (
-          <span className="row">
-            <a className="btn btn-ghost" style={{ minHeight: 36, padding: '6px 12px' }} href={`/api/artifacts/${file.id}/content`} target="_blank" rel="noreferrer">Buka</a>
-            <a className="btn" style={{ minHeight: 36, padding: '6px 12px' }} href={`/api/artifacts/${file.id}/download`} download>Unduh</a>
-          </span>
-        )}
-      </div>
-      {file ? <FileView key={file.id} file={file} /> : <OutputSummary output={output} />}
     </section>
   );
 }

@@ -329,7 +329,8 @@ export interface CompanyStatus {
   nextAgendaAt: string | null;
   spentUsd: number;
   quota: { used: number; max: number } | null;
-  objectives: { id: string; title: string; status: string; mode: string; createdAt: string }[];
+  objectives: { id: string; title: string; status: string; mode: string; createdAt: string; steps: { title: string; status: string; kind: string; agentName: string | null }[] }[];
+  results: { objectiveId: string; title: string; summary: string | null; status: string; at: string | null }[];
 }
 
 export interface Settings {

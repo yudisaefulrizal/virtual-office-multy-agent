@@ -1,15 +1,14 @@
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { api, useLive, useNow, type OfficeAgent } from '../api';
-import { ACTIVITY, TASK_STATUS, dateTime, duration, eventText, time } from '../format';
+import { ACTIVITY, duration } from '../format';
 import type { BehaviorEngine } from '../office/behavior';
 import { buildBuilding } from '../office/layout';
 import { lookFor } from '../office/look';
-import { Inbox } from './Inbox';
 
 const OfficeScene = lazy(() => import('../office/Scene').then((m) => ({ default: m.OfficeScene })));
 
 export function OfficePage() {
-  const { data, error, refresh } = useLive(api.office);
+  const { data, error } = useLive(api.office);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [floorIndex, setFloorIndex] = useState(0);
   const engineRef = useRef<BehaviorEngine | null>(null);
@@ -40,95 +39,54 @@ export function OfficePage() {
 
   const working = data.agents.filter((a) => a.activity === 'working').length;
 
+  const counts = {
+    working: data.agents.filter((a) => a.activity === 'working').length,
+    waiting: data.agents.filter((a) => a.activity === 'waiting' || a.activity === 'blocked').length,
+    idle: data.agents.filter((a) => a.activity === 'idle' || a.activity === 'done').length,
+  };
+
   return (
-    <main className="page split">
-      <section className="main" aria-label="Kantor 3D">
-        <div className="scene-card">
-          <div className="scene-head">
-            <div>
-              <div className="eyebrow" style={{ color: '#aeb4bc' }}>Kantor</div>
-              <div style={{ fontWeight: 600, fontSize: 16 }}>
-                {data.agents.length} karyawan · {working} sedang bekerja
-              </div>
-              {data.nextRun && (
-                <a href={`#/objectives/${data.nextRun.objectiveId}`} className="small" style={{ color: '#c9d6ff' }}>
-                  Run berikutnya {dateTime(data.nextRun.at)} · {data.nextRun.title}
-                </a>
-              )}
-            </div>
-            <div className="row wrap">
-              {data.runtimes.map((r) => (
-                <span key={r.id} className="rt-chip">
-                  <span className={`sq ${!r.configured ? 'dark-dash-grey' : r.cooldownUntil ? 'dark-fill-orange' : r.inflight > 0 ? 'dark-fill-blue' : 'dark-fill-green'}`} />
-                  {r.id} {r.configured ? `${r.inflight}/${r.concurrency}` : 'belum aktif'}
-                </span>
-              ))}
-            </div>
-          </div>
-          {building.floors.length > 1 && (
-            <div role="tablist" aria-label="Lantai" className="row" style={{ padding: '8px 20px', gap: 6, borderBottom: '1px solid var(--scene-line)' }}>
+    <main className="office">
+      <section className="stage" aria-label="Denah kantor">
+        <div className="stage-bar">
+          {building.floors.length > 1 ? (
+            <div role="tablist" aria-label="Lantai" className="tabs-dark">
               {building.floors.map((f) => (
-                <button
-                  key={f.index}
-                  type="button"
-                  role="tab"
-                  aria-selected={f.index === floor.index}
-                  className="rt-chip"
-                  style={{ cursor: 'pointer', color: '#fff', borderColor: f.index === floor.index ? '#6f8fff' : undefined }}
-                  onClick={() => setFloorIndex(f.index)}
-                >
+                <button key={f.index} type="button" role="tab" aria-selected={f.index === floor.index} className={f.index === floor.index ? 'on' : undefined} onClick={() => setFloorIndex(f.index)}>
                   Lantai {f.index + 1}
                 </button>
               ))}
             </div>
+          ) : (
+            <h1 style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>Kantor</h1>
           )}
-          <div className="scene-canvas">
-            <Suspense fallback={<p style={{ padding: 20 }}>Menyiapkan kantor 3D…</p>}>
-              <OfficeScene
-                key={floor.index}
-                floor={floor}
-                agents={data.agents}
-                runtimes={data.runtimes}
-                events={data.events}
-                meeting={data.meeting}
-                deptColors={deptColors}
-                selectedId={selected?.id ?? null}
-                onSelect={setSelectedId}
-                engineRef={engineRef}
-              />
-            </Suspense>
-          </div>
-          <div className="scene-foot">
-            {(['working', 'waiting', 'done', 'idle', 'blocked', 'inactive'] as const).map((k) => (
-              <span key={k} className="row" style={{ gap: 6 }}>
-                <span className={`sq ${ACTIVITY[k].darkDot}`} />
-                {ACTIVITY[k].label}
-              </span>
-            ))}
-            <span style={{ marginLeft: 'auto', color: '#aeb4bc' }}>Klik avatar · seret untuk memutar · scroll untuk zoom</span>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <span className="rt-chip">Semua <b className="mono">{data.agents.length}</b></span>
+            <span className="rt-chip"><span className="sq dark-fill-blue" />Bekerja <b className="mono">{counts.working}</b></span>
+            <span className="rt-chip"><span className="sq dark-fill-orange" />Antre <b className="mono">{counts.waiting}</b></span>
+            <span className="rt-chip"><span className="sq dark-ring-grey" />Santai <b className="mono">{counts.idle}</b></span>
           </div>
         </div>
-        <RecentObjectives />
+        <div className="scene-canvas">
+          <Suspense fallback={<p style={{ padding: 20 }}>Menyiapkan kantor…</p>}>
+            <OfficeScene
+              key={floor.index}
+              floor={floor}
+              agents={data.agents}
+              runtimes={data.runtimes}
+              events={data.events}
+              meeting={data.meeting}
+              deptColors={deptColors}
+              selectedId={selected?.id ?? null}
+              onSelect={setSelectedId}
+              engineRef={engineRef}
+            />
+          </Suspense>
+        </div>
       </section>
 
-      <aside className="side">
+      <aside className="drawer" aria-label="Detail karyawan">
         {selected && <AgentDetail agent={selected} engineRef={engineRef} departmentName={data.departments.find((d) => d.id === selected.department)?.name} />}
-        <Inbox items={data.inbox} onChanged={refresh} />
-        <CompanyHint />
-        <section className="card" aria-labelledby="feed">
-          <h2 id="feed">Aktivitas</h2>
-          <ol className="feed">
-            {data.events.slice(0, 12).map((e) => (
-              <li key={e.id}>
-                <span className="mono small muted">{time(e.createdAt)}</span>
-                <span>
-                  <strong>{e.actorName}</strong> <span style={{ color: 'var(--ink-2)' }}>{eventText(e.type, e.payload)}</span>
-                </span>
-              </li>
-            ))}
-            {data.events.length === 0 && <li><span /><span className="muted">Belum ada aktivitas. Jalankan perusahaan dari halaman Perusahaan.</span></li>}
-          </ol>
-        </section>
       </aside>
     </main>
   );
@@ -150,9 +108,9 @@ function AgentDetail({ agent, engineRef, departmentName }: { agent: OfficeAgent;
   };
 
   return (
-    <section className="card" aria-labelledby="agent-name" style={{ gap: 14 }}>
-      <div className="row" style={{ gap: 14 }}>
-        <div className="portrait" aria-hidden="true" style={{ background: look.skin }}>
+    <section className="agent" aria-labelledby="agent-name">
+      <div className="row" style={{ gap: 16 }}>
+        <div className="portrait" aria-hidden="true" style={{ background: look.skin, width: 56, height: 56 }}>
           <div style={{ left: 0, top: 0, width: 60, height: 16, background: look.hair }} />
           <div style={{ left: 0, top: 16, width: 8, height: 12, background: look.hair }} />
           <div style={{ left: 52, top: 16, width: 8, height: 12, background: look.hair }} />
@@ -161,102 +119,32 @@ function AgentDetail({ agent, engineRef, departmentName }: { agent: OfficeAgent;
           <div style={{ left: 0, top: 48, width: 60, height: 12, background: look.shirt }} />
         </div>
         <div style={{ minWidth: 0 }}>
-          <h2 id="agent-name" style={{ fontSize: 18 }}>{agent.name}</h2>
-          <div className="small muted">{agent.roleName}{departmentName ? ` · ${departmentName}` : ''}{agent.isHead ? ' · Kepala divisi' : ''}</div>
-          <div className="row small" style={{ marginTop: 4, gap: 6 }}>
-            <span className={`dot ${st.dot}`} />
-            <strong style={{ color: st.tone }}>{st.label}</strong>
-          </div>
+          <h2 id="agent-name" style={{ fontSize: 20, fontWeight: 700 }}>{agent.name}</h2>
+          <div className="small" style={{ color: '#a6aeba' }}>{agent.roleName}{departmentName ? ` · ${departmentName}` : ''}</div>
+          <span className="row small" style={{ gap: 8, marginTop: 4 }}>
+            <span className={`sq ${st.darkDot}`} />
+            <strong>{st.label}</strong>
+          </span>
         </div>
       </div>
-      <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', fontSize: 13 }}>
-        <dt className="muted">Runtime</dt>
-        <dd className="mono small" style={{ margin: 0 }}>{agent.runtime}{agent.model ? ` · ${agent.model}` : ''}</dd>
-        <dt className="muted">Pekerjaan</dt>
-        <dd style={{ margin: 0 }}>{agent.line}</dd>
-        {doing && (
-          <>
-            <dt className="muted">Sedang</dt>
-            <dd style={{ margin: 0 }}>{doing}</dd>
-          </>
-        )}
-        <dt className="muted">Workspace</dt>
-        <dd className="mono small" style={{ margin: 0, overflowWrap: 'anywhere' }}>{agent.workspacePath}</dd>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <span className="label" style={{ color: '#7c8696' }}>Sekarang</span>
+        <strong style={{ fontSize: 16 }}>{agent.task?.title ?? doing ?? agent.line}</strong>
+        {agent.task?.startedAt && agent.task.status === 'running' && <span className="mono small" style={{ color: '#a6aeba' }}>{duration(now - Date.parse(agent.task.startedAt))}</span>}
+      </div>
+      <dl>
+        <dt>Model</dt>
+        <dd className="mono">{agent.model ?? agent.runtime}</dd>
+        {agent.isHead && (<><dt>Peran</dt><dd>Kepala divisi</dd></>)}
       </dl>
       {agent.task && (
-        <div className="notice notice-blue" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span className="eyebrow" style={{ color: 'var(--blue-ink)' }}>{agent.task.status === 'running' ? 'Sedang dikerjakan' : 'Di antrean'}</span>
-          <strong>{agent.task.title}</strong>
-          <span className="small mono muted">
-            percobaan {Math.max(1, agent.task.attempt)}/{agent.task.maxAttempts}
-            {agent.task.startedAt && agent.task.status === 'running' ? ` · ${duration(now - Date.parse(agent.task.startedAt))}` : ''}
-          </span>
-          <div className="row wrap">
-            {agent.task.sessionId && (
-              <a className="btn btn-ghost" href={`/api/sessions/${agent.task.sessionId}/log`} target="_blank" rel="noreferrer">
-                Lihat log sesi
-              </a>
-            )}
-            <button type="button" className="btn btn-danger" onClick={stop} disabled={stopping}>
-              {stopping ? 'Menghentikan…' : agent.task.status === 'running' ? 'Hentikan sesi' : 'Batalkan task'}
-            </button>
-          </div>
+        <div className="row wrap">
+          {agent.task.sessionId && <a className="btn btn-sm" style={{ background: '#fff', color: '#111418' }} href={`/api/sessions/${agent.task.sessionId}/log`} target="_blank" rel="noreferrer">Log</a>}
+          <button type="button" className="btn btn-sm" style={{ background: 'transparent', borderColor: '#3b4552' }} onClick={stop} disabled={stopping}>
+            {stopping ? 'Menghentikan…' : agent.task.status === 'running' ? 'Hentikan' : 'Batalkan'}
+          </button>
         </div>
       )}
-    </section>
-  );
-}
-
-function RecentObjectives() {
-  const { data } = useLive(api.objectives);
-  if (!data || data.length === 0) return null;
-  return (
-    <section className="card" aria-labelledby="recent-obj">
-      <div className="row between wrap">
-        <h2 id="recent-obj">Objective terbaru</h2>
-        <a href="#/objectives">Semua objective</a>
-      </div>
-      <div className="table-box">
-        <table style={{ minWidth: 520 }}>
-          <tbody>
-            {data.slice(0, 5).map((o) => {
-              const st = TASK_STATUS[o.status] ?? TASK_STATUS.new!;
-              return (
-                <tr key={o.id}>
-                  <td><a href={`#/objectives/${o.id}`} style={{ fontWeight: 500 }}>{o.title}</a></td>
-                  <td>
-                    <span className="row" style={{ gap: 6 }}>
-                      <span className={`dot ${st.dot}`} />
-                      <span style={{ color: st.tone, fontWeight: 500 }}>{st.label}</span>
-                    </span>
-                  </td>
-                  <td className="mono small">{o.completedCount}/{o.taskCount} task</td>
-                  <td className="small muted">{dateTime(o.createdAt)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-/** Kantor tidak lagi menerima objective manual: perusahaan memutuskan pekerjaannya sendiri. */
-function CompanyHint() {
-  const { data } = useLive(api.company);
-  if (!data) return null;
-  const text =
-    data.state === 'running'
-      ? 'Berjalan sendiri. Anda hanya dihubungi bila ada yang melewati batas.'
-      : data.state === 'paused'
-        ? `Dijeda${data.company?.pausedReason ? `: ${data.company.pausedReason}` : '.'}`
-        : 'Belum diatur. Isi jenis usaha, produk, dan batas agar perusahaan bisa bekerja sendiri.';
-  return (
-    <section className="card" aria-labelledby="co-hint">
-      <h2 id="co-hint">Perusahaan</h2>
-      <p className="small muted" style={{ margin: 0 }}>{text}</p>
-      <a className="btn btn-ghost" href="#/company">{data.state === 'running' ? 'Buka halaman Perusahaan' : data.state === 'paused' ? 'Lanjutkan di halaman Perusahaan' : 'Atur perusahaan'}</a>
     </section>
   );
 }

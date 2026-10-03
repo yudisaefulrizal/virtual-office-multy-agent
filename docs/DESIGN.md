@@ -831,3 +831,12 @@ Mengikuti pola `nc-wa-official` (Business Login for Instagram), bukan token manu
 - **Belum diuji dengan Meta sungguhan** (tes memakai server Meta tiruan lewat `INSTAGRAM_*_URL`). Meta umumnya mewajibkan Redirect URI HTTPS; akun harus Business/Creator dan app dalam mode dev hanya mengizinkan akun tester.
 
 Keamanan tunnel: dashboard dan API tidak punya login, jadi `onRequest` hook hanya melayani permintaan dari komputer ini (Host loopback dan tanpa header proxy `cf-connecting-ip`/`x-forwarded-*`/`x-real-ip`/`forwarded`). Lewat alamat publik hanya `GET /auth/instagram/callback` yang dilayani, lalu browser dikembalikan ke `UI_ORIGIN` (dashboard lokal). Agent mengakses `/mcp` lewat loopback sehingga tidak terpengaruh. Bila suatu saat dashboard perlu dibuka dari jauh, tambahkan login Owner dulu.
+
+## 20. Desain ulang antarmuka (2026-10-03)
+
+Dirancang di Claude Design (kanvas "Virtual Office UI"), lalu diterapkan:
+- **Shell**: sidebar tunggal (Perusahaan, Kantor, Hasil, Akses, Biaya, Pengaturan) dengan lencana "Perlu Anda"; di ponsel menjadi bilah tab bawah. Objective/Keputusan/Knowledge diturunkan ke tautan sekunder.
+- **Beranda = Perusahaan** (`#/`): status, kotak Perlu Anda (satu-satunya yang meminta tindakan), tiga pemakaian (pekerjaan, kuota, budget), pekerjaan berjalan dengan bar langkah, aktivitas, hasil terbaru. Belum ada profil → formulir profil satu kolom. Kantor pindah ke `#/office`.
+- **Sistem visual**: Plus Jakarta Sans + JetBrains Mono (angka), skala 1,25, grid 8 px, warna hanya untuk status (amber = perlu Anda, hijau = berjalan/selesai, biru = bekerja), tombol utama hitam satu per area. Teks penjelasan dibuang; label dan angka saja.
+- **Kantor**: panggung gelap dengan panel detail karyawan di samping; inbox, aktivitas, dan objective terbaru pindah ke beranda.
+- **Hasil**: daftar hasil akhir + pratinjau; **Akses**: daftar baris dengan satu aksi per integrasi.

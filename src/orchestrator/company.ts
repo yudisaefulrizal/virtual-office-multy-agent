@@ -1,8 +1,8 @@
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { type CompanyBrief, agendaInstructions, companyBriefText } from '../agents/roles';
 import type { Agenda, AgendaInput } from '../agents/schemas';
 import type { Tx } from '../db/client';
-import { agentSessions, objectives, tasks } from '../db/schema';
+import { agentSessions, agents, objectives, tasks } from '../db/schema';
 import { Objective, UserError, type Actor } from '../domain';
 import { type Emit, type OfficeContext, withTx } from './context';
 import { createObjectiveIn, insertTask, promoteAllObjectives } from './office';
@@ -197,6 +197,25 @@ export async function companyStatus(ctx: OfficeContext, now = new Date()) {
   const open = all.filter((o) => OPEN.includes(o.status));
   const quota = await quotaUsage(ctx, 'claude-cli');
   const spent = await monthSpentUsd(ctx.db, now);
+  const openIds = open.map((o) => o.id);
+  const stepRows = openIds.length
+    ? await ctx.db
+        .select({ task: tasks, agentName: agents.name })
+        .from(tasks)
+        .leftJoin(agents, eq(agents.id, tasks.assignedAgentId))
+        .where(inArray(tasks.objectiveId, openIds))
+        .orderBy(asc(tasks.createdAt))
+    : [];
+  // Satu langkah per plan key (versi terbaru), urut sesuai pembuatan.
+  const stepsByObjective = new Map<string, { title: string; status: string; kind: string; agentName: string | null }[]>();
+  for (const { task, agentName } of stepRows) {
+    const list = stepsByObjective.get(task.objectiveId) ?? [];
+    const i = task.planKey ? list.findIndex((x) => (x as { key?: string }).key === `${task.projectId}:${task.planKey}`) : -1;
+    const entry = { title: task.title, status: task.status, kind: task.kind, agentName, key: task.planKey ? `${task.projectId}:${task.planKey}` : task.id };
+    if (i >= 0) list[i] = entry;
+    else list.push(entry);
+    stepsByObjective.set(task.objectiveId, list);
+  }
   let nextAgendaAt: string | null = null;
   let waiting: string | null = null;
   if (company?.running) {
@@ -212,7 +231,15 @@ export async function companyStatus(ctx: OfficeContext, now = new Date()) {
     waiting,
     nextAgendaAt,
     spentUsd: spent,
+    results: (await listResults(ctx)).filter((r) => all.some((o) => o.id === r.id)).slice(0, 6).flatMap((r) => r.outputs.filter((o) => o.final).map((o) => ({ objectiveId: r.id, title: o.title, summary: o.summary, status: r.status, at: o.completedAt }))).slice(0, 3),
     quota: quota ? { used: quota.used, max: quota.max } : null,
-    objectives: all.slice(0, 20).map((o) => ({ id: o.id, title: o.title, status: o.status, mode: originOf(o).mode ?? 'planned', createdAt: o.createdAt.toISOString() })),
+    objectives: all.slice(0, 20).map((o) => ({
+      id: o.id,
+      title: o.title,
+      status: o.status,
+      mode: originOf(o).mode ?? 'planned',
+      createdAt: o.createdAt.toISOString(),
+      steps: (stepsByObjective.get(o.id) ?? []).map((t) => ({ title: t.title, status: t.status, kind: t.kind, agentName: t.agentName })),
+    })),
   };
 }
