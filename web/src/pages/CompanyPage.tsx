@@ -29,8 +29,8 @@ export function CompanyPage() {
   if (data.state === 'unset') {
     return (
       <main className="onboard">
-        <CharterForm initial={EMPTY} first onDone={async (start) => { if (start) await api.companyAction('start'); status.refresh(); }} />
         <OfficeStage data={office.data} showAgent={false} />
+        <CharterForm initial={EMPTY} first onDone={async (start) => { if (start) await api.companyAction('start'); status.refresh(); }} />
       </main>
     );
   }
@@ -121,6 +121,7 @@ export function ProfilePage() {
   if (!status.data || !office.data) return <main className="page"><p className="muted">Memuat…</p></main>;
   return (
     <main className="onboard">
+      <OfficeStage data={office.data} showAgent={false} />
       <CharterForm
         initial={status.data.company ?? EMPTY}
         first={status.data.state === 'unset'}
@@ -129,7 +130,6 @@ export function ProfilePage() {
           window.location.hash = '#/';
         }}
       />
-      <OfficeStage data={office.data} showAgent={false} />
     </main>
   );
 }
@@ -157,8 +157,8 @@ function CharterForm({ initial, first, onDone }: { initial: CompanyCharter; firs
   return (
     <section className="card onboard-form" aria-labelledby="cf-title">
       <div>
-        <h1 id="cf-title" className="page-title" style={{ fontSize: 31 }}>{first ? 'Bangun perusahaan Anda' : 'Profil perusahaan'}</h1>
-        {first && <p className="muted" style={{ margin: '6px 0 0' }}>Isi usaha dan batas. Kantor di samping mulai bekerja begitu dijalankan.</p>}
+        <h1 id="cf-title" className="page-title">{first ? 'Bangun perusahaan Anda' : 'Profil perusahaan'}</h1>
+        {first && <p className="muted" style={{ margin: '6px 0 0' }}>Isi usaha dan batas, lalu jalankan.</p>}
       </div>
       <div className="field"><label htmlFor="cf-name">Nama</label><input id="cf-name" value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="Kopi Senja" /></div>
       <div className="row wrap" style={{ gap: 12, alignItems: 'flex-start' }}>
@@ -189,12 +189,12 @@ function CharterForm({ initial, first, onDone }: { initial: CompanyCharter; firs
         </label>
       </div>
       {err && <p className="error" role="alert" style={{ margin: 0 }}>{err}</p>}
-      <div className="row wrap" style={{ marginTop: 'auto' }}>
-        <button type="button" className="btn" style={{ minHeight: 48, flex: '1 1 200px' }} disabled={busy || !valid} onClick={() => save(true)}>
+      <div className="row wrap">
+        <button type="button" className="btn" style={{ minHeight: 44, flex: '1 1 200px' }} disabled={busy || !valid} onClick={() => save(true)}>
           {first ? 'Jalankan perusahaan' : 'Simpan dan jalankan'}
         </button>
-        <button type="button" className="btn btn-ghost" style={{ minHeight: 48 }} disabled={busy || !valid} onClick={() => save(false)}>Simpan</button>
-        {!first && <a className="btn btn-ghost" style={{ minHeight: 48 }} href="#/">Batal</a>}
+        <button type="button" className="btn btn-ghost" style={{ minHeight: 44 }} disabled={busy || !valid} onClick={() => save(false)}>Simpan</button>
+        {!first && <a className="btn btn-ghost" style={{ minHeight: 44 }} href="#/">Batal</a>}
       </div>
     </section>
   );
