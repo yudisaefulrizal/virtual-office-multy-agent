@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { UserError } from '../../domain';
 import { z } from 'zod';
@@ -12,6 +12,7 @@ import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator
 import { createObjective } from '../../orchestrator/office';
 import { setObjectiveBudget } from '../../orchestrator/budget';
 import { setSchedule } from '../../orchestrator/scheduler';
+import { usageStats } from '../../orchestrator/stats';
 import { registerMcp } from '../../gateway/mcp';
 import { PROVIDER_IDS, listProviders, setProvider, updateAgent } from '../../orchestrator/providers';
 import { decisionDetail, listApprovals, listDecisions, listObjectives, listTools, objectiveTrace, officeView } from '../../orchestrator/queries';
@@ -72,7 +73,11 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
   });
 
   app.get('/api/agents', async () => {
-    const rows = await ctx.db.select({ agent: agents, roleName: roles.name, department: roles.department }).from(agents).innerJoin(roles, eq(roles.id, agents.roleId));
+    const rows = await ctx.db
+      .select({ agent: agents, roleName: roles.name, department: roles.department })
+      .from(agents)
+      .innerJoin(roles, eq(roles.id, agents.roleId))
+      .orderBy(asc(roles.department), asc(agents.name));
     return rows.map((r) => ({ ...r.agent, roleName: r.roleName, department: r.department }));
   });
   app.patch('/api/agents/:id', async (req) => {
@@ -171,6 +176,11 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     await setObjectiveBudget(ctx, id, body.budgetUsd);
     void worker.tick();
     return { ok: true };
+  });
+
+  app.get('/api/stats', async (req) => {
+    const { days } = z.object({ days: z.coerce.number().int().min(1).max(90).default(14) }).parse(req.query);
+    return usageStats(ctx, days);
   });
 
   app.get('/api/settings', () => getAllSettings(ctx.db));

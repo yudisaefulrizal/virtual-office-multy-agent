@@ -6,6 +6,7 @@ import { ObjectivePage } from './pages/ObjectivePage';
 import { ObjectivesPage } from './pages/ObjectivesPage';
 import { OfficePage } from './pages/OfficePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SummaryPage } from './pages/SummaryPage';
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => window.location.hash || '#/');
@@ -70,7 +71,9 @@ export function App() {
         ? 'settings'
         : route.startsWith('/knowledge')
           ? 'knowledge'
-          : 'office';
+          : route.startsWith('/summary')
+            ? 'summary'
+            : 'office';
 
   return (
     <>
@@ -89,6 +92,9 @@ export function App() {
           <nav className="nav" aria-label="Utama">
             <a href="#/" aria-current={section === 'office' ? 'page' : undefined}>
               Kantor
+            </a>
+            <a href="#/summary" aria-current={section === 'summary' ? 'page' : undefined}>
+              Ringkasan
             </a>
             <a href="#/objectives" aria-current={section === 'objectives' ? 'page' : undefined}>
               Objective
@@ -118,6 +124,8 @@ export function App() {
         <SettingsPage />
       ) : section === 'knowledge' ? (
         <KnowledgePage />
+      ) : section === 'summary' ? (
+        <SummaryPage />
       ) : (
         <OfficePage />
       )}

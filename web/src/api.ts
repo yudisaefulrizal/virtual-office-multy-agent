@@ -199,6 +199,28 @@ export interface AgentRow {
 
 export type ObjectiveMode = 'strategic' | 'planned' | 'direct';
 
+export interface UsageBucket {
+  sessions: number;
+  failures: number;
+  inputTokens: number;
+  outputTokens: number;
+  actualUsdMicros: number;
+  estimateUsdMicros: number;
+  durationMs: number;
+}
+
+export interface UsageStats {
+  days: number;
+  usdToIdr: number;
+  today: UsageBucket & { tasks: { completed: number; failed: number } };
+  month: UsageBucket;
+  byDay: (UsageBucket & { date: string })[];
+  byAgent: (UsageBucket & { id: string; name: string })[];
+  byObjective: (UsageBucket & { id: string; title: string })[];
+  byRuntime: (UsageBucket & { runtime: string; model: string | null })[];
+  tools: { toolId: string; statuses: Record<string, number> }[];
+}
+
 export interface KnowledgeItem {
   id: string;
   topic: string;
@@ -283,6 +305,7 @@ export const api = {
   knowledge: (q: string, category: string) =>
     request<KnowledgeItem[]>(`/api/knowledge?${new URLSearchParams({ ...(q ? { q } : {}), ...(category ? { category } : {}) })}`),
   deleteKnowledge: (id: string) => request<{ ok: boolean }>(`/api/knowledge/${id}`, { method: 'DELETE' }),
+  stats: (days: number) => request<UsageStats>(`/api/stats?days=${days}`),
   settings: () => request<Settings>('/api/settings'),
   decideApproval: (id: string, action: 'approve' | 'reject', note?: string) =>
     request<{ ok: boolean; message?: string }>(`/api/approvals/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) }),
