@@ -10,7 +10,7 @@ export function DecisionsPage() {
         <h2>Keputusan CEO</h2>
         {error && <p className="error">{error}</p>}
         {data && data.length === 0 && (
-          <p className="muted">Belum ada keputusan. Beri objective dengan cara kerja "Strategis" agar CEO menyusun keputusan.</p>
+          <p className="muted">Belum ada keputusan. Keputusan muncul saat CEO menyusun strategi untuk pekerjaan besar; yang masih dalam batas perusahaan disetujui otomatis.</p>
         )}
         {data && data.length > 0 && (
           <div className="table-box">

@@ -5,7 +5,6 @@ import type { BehaviorEngine } from '../office/behavior';
 import { buildBuilding } from '../office/layout';
 import { lookFor } from '../office/look';
 import { Inbox } from './Inbox';
-import { NewObjective } from './NewObjective';
 
 const OfficeScene = lazy(() => import('../office/Scene').then((m) => ({ default: m.OfficeScene })));
 
@@ -115,7 +114,7 @@ export function OfficePage() {
       <aside className="side">
         {selected && <AgentDetail agent={selected} engineRef={engineRef} departmentName={data.departments.find((d) => d.id === selected.department)?.name} />}
         <Inbox items={data.inbox} onChanged={refresh} />
-        <NewObjective />
+        <CompanyHint />
         <section className="card" aria-labelledby="feed">
           <h2 id="feed">Aktivitas</h2>
           <ol className="feed">
@@ -127,7 +126,7 @@ export function OfficePage() {
                 </span>
               </li>
             ))}
-            {data.events.length === 0 && <li><span /><span className="muted">Belum ada aktivitas. Beri objective pertama.</span></li>}
+            {data.events.length === 0 && <li><span /><span className="muted">Belum ada aktivitas. Jalankan perusahaan dari halaman Perusahaan.</span></li>}
           </ol>
         </section>
       </aside>
@@ -239,6 +238,25 @@ function RecentObjectives() {
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+/** Kantor tidak lagi menerima objective manual: perusahaan memutuskan pekerjaannya sendiri. */
+function CompanyHint() {
+  const { data } = useLive(api.company);
+  if (!data) return null;
+  const text =
+    data.state === 'running'
+      ? 'Berjalan sendiri. Anda hanya dihubungi bila ada yang melewati batas.'
+      : data.state === 'paused'
+        ? `Dijeda${data.company?.pausedReason ? `: ${data.company.pausedReason}` : '.'}`
+        : 'Belum diatur. Isi jenis usaha, produk, dan batas agar perusahaan bisa bekerja sendiri.';
+  return (
+    <section className="card" aria-labelledby="co-hint">
+      <h2 id="co-hint">Perusahaan</h2>
+      <p className="small muted" style={{ margin: 0 }}>{text}</p>
+      <a className="btn btn-ghost" href="#/company">{data.state === 'running' ? 'Buka halaman Perusahaan' : data.state === 'paused' ? 'Lanjutkan di halaman Perusahaan' : 'Atur perusahaan'}</a>
     </section>
   );
 }

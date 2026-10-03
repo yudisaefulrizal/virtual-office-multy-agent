@@ -24,7 +24,7 @@ Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasi
 | Hasil kerja | Halaman **Hasil**: hasil akhir tiap objective (bahan riset/antara dilipat sebagai pendukung), dilihat langsung (Markdown, HTML aman, gambar, JSON, CSV) atau diunduh per file / ZIP hasil akhir |
 | Observability | Ringkasan biaya (Rupiah/USD), sesi, token per hari, agent, objective, runtime |
 
-Tiga cara kerja saat memberi objective:
+Objective tidak lagi diberikan manual lewat UI: perusahaan membuatnya sendiri (halaman Perusahaan). Tiga cara kerja yang dipilih CEO untuk tiap objective:
 
 | Mode | Alur | Kuota Claude (perkiraan) |
 |---|---|---|

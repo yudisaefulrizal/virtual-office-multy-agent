@@ -9,7 +9,7 @@ export function ObjectivesPage() {
       <section className="card">
         <h2>Objective</h2>
         {error && <p className="error">{error}</p>}
-        {data && data.length === 0 && <p className="muted">Belum ada objective. Beri objective dari halaman Kantor.</p>}
+        {data && data.length === 0 && <p className="muted">Belum ada objective. Objective dibuat perusahaan sendiri begitu dijalankan dari halaman Perusahaan.</p>}
         {data && data.length > 0 && (
           <div className="table-box">
             <table style={{ minWidth: 560 }}>

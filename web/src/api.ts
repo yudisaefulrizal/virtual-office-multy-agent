@@ -425,8 +425,6 @@ export const api = {
   objectives: () => request<ObjectiveSummary[]>('/api/objectives'),
   results: () => request<ObjectiveResult[]>('/api/results'),
   objective: (id: string) => request<ObjectiveTrace>(`/api/objectives/${id}`),
-  createObjective: (title: string, description: string, mode: ObjectiveMode, schedule?: ScheduleInput) =>
-    request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description, mode, schedule }) }),
   setSchedule: (id: string, schedule: ScheduleInput | null) =>
     request<{ ok: boolean }>(`/api/objectives/${id}/schedule`, schedule ? { method: 'PUT', body: JSON.stringify(schedule) } : { method: 'DELETE' }),
   cancelTask: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}/cancel`, { method: 'POST' }),
