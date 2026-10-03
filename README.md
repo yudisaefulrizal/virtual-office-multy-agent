@@ -2,13 +2,26 @@
 
 Organisasi AI multi-agent dengan kantor 3D yang bisa dipantau. Virtual Office adalah orchestrator; Claude Code (`claude -p`) adalah runtime yang mengerjakan task. Desain lengkap: [docs/DESIGN.md](docs/DESIGN.md).
 
-Status: **Slice 2** — Owner memberi objective → Manager menyusun rencana (task + dependency) → Research Agent dan Content Writer mengerjakan lewat Claude CLI, hasil diteruskan antar task → Manager mereview (maks. 2 revisi, lalu diserahkan ke Owner). Semua sesi, token, artifact, dan event tercatat dan tampil di kantor 3D.
+Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasikan.
 
-Dua cara kerja saat memberi objective:
+| Bagian | Isi |
+|---|---|
+| Kantor 3D | Avatar voxel per karyawan, status live, rapat strategi, avatar berjalan ke Manager saat menyerahkan hasil |
+| Strategi (Slice 3) | CEO → konsultasi selektif (R&D, CFO, CTO, HRD) → usulan keputusan → persetujuan Owner → Manager |
+| Eksekusi (Slice 2) | Manager merencanakan task + dependency, tim mengerjakan, Manager mereview (maks. 2 revisi) |
+| Runtime | Claude CLI (utama, login langganan) dan OpenRouter (role yang cukup bernalar, hemat kuota) |
+| Knowledge | Hasil riset disimpan, dipakai ulang, dan ditandai untuk verifikasi ulang per kategori |
+| Tool Gateway | MCP milik Virtual Office: izin per role, tool berisiko menunggu persetujuan Owner, credential terenkripsi |
+| Budget | Batas biaya API nyata per objective; lewat batas → task ditunda |
+| Scheduler | Objective berulang (harian/interval) tanpa mengulang strategi dan perencanaan |
+| Observability | Ringkasan biaya (Rupiah/USD), sesi, token per hari, agent, objective, runtime |
 
-| Mode | Alur | Kuota Claude |
+Tiga cara kerja saat memberi objective:
+
+| Mode | Alur | Kuota Claude (perkiraan) |
 |---|---|---|
-| Terencana (default) | Rencana → riset/tulis → review | ±4 run |
+| Strategis | CEO + konsultasi → keputusan (Anda setujui) → rencana → kerja → review | ±7–10 run; lebih hemat bila eksekutif di OpenRouter |
+| Terencana | Rencana Manager → riset/tulis → review | ±4 run |
 | Cepat | Langsung ke Content Writer | 1 run |
 
 ## Menjalankan
@@ -51,6 +64,17 @@ VO_FORCE_RUNTIME=fake npm start
 
 Semua agent memakai runtime palsu yang menulis `out/result.md`. Cocok untuk mencoba UI dan alur.
 
+Setelah memperbarui kode, restart server (`npm start`): migrasi database berjalan otomatis saat start.
+
+## Pengaturan yang Anda isi sendiri
+
+Di halaman **Pengaturan**:
+
+- **OpenRouter**: API key + model default. Agent yang menunggu provider (mis. Market Researcher) aktif otomatis. Lalu pindahkan CFO/CTO/HRD ke `openrouter` agar konsultasi tidak memakai kuota Claude.
+- **Instagram**: access token Graph API, Instagram Business Account ID, dan versi API. Publish hanya terjadi setelah Anda menyetujui permintaan agent di kotak "Perlu Anda".
+
+Credential disimpan terenkripsi (AES-256-GCM) dengan kunci di `.vo-secret` (dibuat otomatis) atau `VO_SECRET_KEY`. **Jangan hapus `.vo-secret`**: tanpa kunci itu credential tersimpan tidak bisa dibuka dan harus dimasukkan ulang.
+
 ## Kuota Claude Pro
 
 Agent memakai login Claude Code Anda (langganan, bukan API key), jadi kuotanya dipakai bersama sesi Claude Anda sendiri. Pengaman di `.env`:
@@ -68,6 +92,14 @@ Jika Claude mengembalikan rate limit, task kembali ke antrean tanpa menghabiskan
 
 Setiap sesi berjalan dengan `--restricted` (tanpa Bash/eksekusi kode, file hanya di folder task, setting pribadi diabaikan), `--strict-mcp-config` (tanpa MCP pribadi), daftar tools sesuai role, dan environment tanpa secret. Hasil agent divalidasi terhadap schema sebelum diterima; output tidak valid diperbaiki sekali lewat `--resume`.
 
+## Belum diuji dengan layanan sungguhan
+
+- OpenRouter (butuh API key): adapter diuji dengan respons tiruan.
+- Instagram publish (butuh token Graph API dan URL gambar publik): diuji dengan Graph API tiruan.
+- Pesan rate limit Claude: polanya masih perkiraan sampai kuota benar-benar habis.
+
+Yang sudah diuji dengan Claude CLI sungguhan: task tunggal (Slice 1) dan pemanggilan Tool Gateway lewat MCP.
+
 ## Struktur
 
 ```
@@ -76,7 +108,9 @@ src/
   db/            schema Drizzle + migrasi (drizzle/)
   runtimes/      AgentRuntime, ClaudeCliRuntime, FakeRuntime
   agents/        role, schema output, prompt
-  orchestrator/  layanan kantor, worker antrean, read model
+  orchestrator/  playbook (office, strategy), worker antrean, knowledge, budget,
+                 scheduler, provider, statistik, read model
+  gateway/       Tool Gateway: registry tool & izin, MCP endpoint, persetujuan
   interface/     HTTP API + SSE
 web/             React + Three.js (kantor 3D, jejak objective)
 workspaces/      file kerja agent (diabaikan git)

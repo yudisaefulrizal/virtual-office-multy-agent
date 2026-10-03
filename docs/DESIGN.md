@@ -1,6 +1,6 @@
 # Virtual Office Multi-Agent — Design v0.1
 
-Status: Slice 2 selesai (langkah 1–9 di §12): Manager merencanakan task dengan dependency, hasil diteruskan lewat context/, review dengan maks. 2 revisi lalu eskalasi ke Owner. Mode cepat (1 run) tetap tersedia. Berikutnya: langkah 10 (OpenRouter) dan Slice 3 (strategic loop).
+Status: roadmap §12 dan Phase 5–8 selesai diimplementasikan (2026-10-03): Slice 1–3, OpenRouter, Knowledge, Tool Gateway (MCP) + persetujuan + budget, Scheduler, Observability. Lihat README untuk bagian yang belum diuji dengan layanan sungguhan.
 Tanggal: 2026-10-03
 
 Dokumen ini menjawab 10 langkah di §34 spesifikasi: analisis, ambiguity, domain model, boundary modul, lifecycle, runtime abstraction, permission boundary, schema minimum, MVP terkecil, dan implementation plan.
