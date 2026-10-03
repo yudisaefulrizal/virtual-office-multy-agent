@@ -137,6 +137,25 @@ export interface ObjectiveTrace {
   events: OfficeEvent[];
 }
 
+export interface ProviderInfo {
+  id: string;
+  configured: boolean;
+  apiKeyLast4: string | null;
+  defaultModel: string | null;
+  updatedAt: string | null;
+}
+
+export interface AgentRow {
+  id: string;
+  name: string;
+  roleId: string;
+  roleName: string;
+  department: string;
+  runtime: string;
+  model: string | null;
+  status: string;
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -156,6 +175,12 @@ export const api = {
   createObjective: (title: string, description: string, mode: 'planned' | 'direct') =>
     request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description, mode }) }),
   cancelTask: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}/cancel`, { method: 'POST' }),
+  providers: () => request<ProviderInfo[]>('/api/providers'),
+  setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>
+    request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  agents: () => request<AgentRow[]>('/api/agents'),
+  updateAgent: (id: string, body: { runtime?: string; model?: string | null; status?: string }) =>
+    request<{ ok: boolean }>(`/api/agents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 };
 
 /** Satu koneksi SSE untuk seluruh aplikasi; komponen berlangganan lewat useLive. */

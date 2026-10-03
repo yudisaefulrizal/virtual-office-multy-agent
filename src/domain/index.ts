@@ -1,6 +1,6 @@
 import { stateMachine } from './state-machine';
 
-export { DomainError } from './state-machine';
+export { DomainError, UserError } from './state-machine';
 
 // Assignment adalah field, bukan state (lihat docs/DESIGN.md §4.3).
 export type TaskStatus = 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -50,7 +50,8 @@ export const Project = stateMachine<ProjectStatus>('Project', {
 
 export type TaskKind = 'framing' | 'consultation' | 'decision' | 'planning' | 'research' | 'work' | 'review';
 
-export type AgentStatus = 'active' | 'inactive';
+/** waiting_provider: runtime-nya belum dikonfigurasi; aktif otomatis saat provider dipasang. */
+export type AgentStatus = 'active' | 'inactive' | 'waiting_provider';
 
 /** Siapa yang melakukan sesuatu. Dicatat di setiap event. */
 export type Actor = 'owner' | 'orchestrator' | 'scheduler' | `agent:${string}`;

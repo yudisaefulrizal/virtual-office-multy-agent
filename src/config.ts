@@ -21,6 +21,9 @@ export const config = {
   workspacesDir: path.resolve(str('WORKSPACES_DIR', './workspaces')),
   defaultModel: str('VO_DEFAULT_MODEL', 'sonnet'),
   forceRuntime: process.env.VO_FORCE_RUNTIME || undefined,
+  /** 64 karakter hex. Kosong = dibuat otomatis di file .vo-secret. */
+  secretKey: process.env.VO_SECRET_KEY || undefined,
+  secretFile: path.resolve(str('VO_SECRET_FILE', './.vo-secret')),
   claudeCli: {
     bin: str('CLAUDE_CLI_BIN', 'claude'),
     configDir: process.env.CLAUDE_CONFIG_DIR || undefined,

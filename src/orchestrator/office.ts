@@ -118,12 +118,12 @@ async function insertTask(tx: Tx, emit: Emit, t: NewTask) {
 }
 
 /**
- * Task `pending` yang semua dependency-nya selesai: assign ke agent yang mampu
- * lalu masukkan ke antrean. Tanpa agent yang cocok, task tetap menunggu dan
- * muncul di inbox Owner (DESIGN.md §6.4).
+ * Task `pending` milik objective yang semua dependency-nya selesai: assign ke agent
+ * yang mampu lalu masukkan ke antrean. Tanpa agent yang cocok, task tetap menunggu
+ * dan muncul di inbox Owner (DESIGN.md §6.4).
  */
-export async function promoteReadyTasks(ctx: OfficeContext, tx: Tx, emit: Emit, projectId: string) {
-  const pending = await tx.select().from(tasks).where(and(eq(tasks.projectId, projectId), eq(tasks.status, 'pending')));
+export async function promoteReadyTasks(ctx: OfficeContext, tx: Tx, emit: Emit, objectiveId: string) {
+  const pending = await tx.select().from(tasks).where(and(eq(tasks.objectiveId, objectiveId), eq(tasks.status, 'pending')));
   if (pending.length === 0) return;
   const deps = await tx
     .select({ taskId: taskDependencies.taskId, status: tasks.status })
@@ -198,7 +198,7 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
             objectiveId, projectId, kind: 'planning', title: `Rencana: ${input.title}`, instructions: planningInstructions(),
             roleId: 'manager', planKey: 'plan', requestedBy: 'owner',
           });
-    await promoteReadyTasks(ctx, tx, emit, projectId);
+    await promoteReadyTasks(ctx, tx, emit, objectiveId);
 
     Objective.assert('new', 'active');
     await tx.update(objectives).set({ status: 'active', updatedAt: new Date() }).where(eq(objectives.id, objectiveId));
@@ -213,8 +213,8 @@ export async function onTaskCompleted(ctx: OfficeContext, tx: Tx, emit: Emit, ta
   if (task.projectId) {
     if (task.kind === 'planning') await materializePlan(tx, emit, task, result as Plan);
     if (task.kind === 'review') await handleReview(tx, emit, task, result as Review);
-    await promoteReadyTasks(ctx, tx, emit, task.projectId);
   }
+  await promoteReadyTasks(ctx, tx, emit, task.objectiveId);
   await onTaskFinished(tx, emit, task);
 }
 
@@ -370,4 +370,15 @@ export async function onTaskFinished(tx: Tx, emit: Emit, task: { projectId: stri
     await tx.update(objectives).set({ status: outcome, updatedAt: new Date() }).where(eq(objectives.id, objective.id));
     emit({ type: `objective.${outcome}`, entityType: 'objective', entityId: objective.id, objectiveId: objective.id, actor: 'orchestrator' });
   }
+}
+
+/** Coba lagi semua task yang menunggu agent (mis. setelah provider dipasang atau agent diaktifkan). */
+export async function promoteAllObjectives(ctx: OfficeContext) {
+  await withTx(ctx, async (tx, emit) => {
+    const open = await tx
+      .selectDistinct({ objectiveId: tasks.objectiveId })
+      .from(tasks)
+      .where(eq(tasks.status, 'pending'));
+    for (const o of open) await promoteReadyTasks(ctx, tx, emit, o.objectiveId);
+  });
 }

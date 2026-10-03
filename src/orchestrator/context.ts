@@ -4,6 +4,7 @@ import type { Db, Tx } from '../db/client';
 import { events } from '../db/schema';
 import type { Actor } from '../domain';
 import type { AgentRuntime, RuntimeId } from '../runtimes/runtime';
+import type { SecretBox } from '../secrets';
 
 export interface NewEvent {
   type: string;
@@ -33,6 +34,8 @@ export interface OfficeContext {
   limits: Map<RuntimeId, RuntimeLimits>;
   /** Paksa semua agent memakai runtime ini (development tanpa kuota). */
   forceRuntime?: RuntimeId;
+  /** Enkripsi credential provider. */
+  secrets: SecretBox;
 }
 
 export type Emit = (ev: NewEvent) => void;

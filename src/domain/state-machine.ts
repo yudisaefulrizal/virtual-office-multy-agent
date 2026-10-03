@@ -17,3 +17,11 @@ export function stateMachine<S extends string>(entity: string, allowed: Record<S
     isTerminal: (s: S) => allowed[s].length === 0,
   };
 }
+
+/** Kesalahan input/aksi Owner yang aman ditampilkan apa adanya (HTTP 400). */
+export class UserError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UserError';
+  }
+}

@@ -1,0 +1,142 @@
+import { useState } from 'react';
+import { api, useLive, type AgentRow, type ProviderInfo } from '../api';
+
+export function SettingsPage() {
+  const providers = useLive(api.providers);
+  const agents = useLive(api.agents);
+
+  return (
+    <main className="page split">
+      <section className="main">
+        <section className="card" aria-labelledby="team">
+          <h2 id="team">Karyawan</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            Runtime menentukan siapa yang menjalankan agent. <span className="mono">claude-cli</span> bisa membaca/menulis file dan riset web;{' '}
+            <span className="mono">openrouter</span> hanya bernalar, cocok untuk konsultasi eksekutif dan perencanaan, dan menghemat kuota Claude.
+          </p>
+          {agents.error && <p className="error">{agents.error}</p>}
+          <div className="table-box">
+            <table style={{ minWidth: 720 }}>
+              <thead>
+                <tr>
+                  <th scope="col">Agent</th>
+                  <th scope="col">Runtime</th>
+                  <th scope="col">Model</th>
+                  <th scope="col">Status</th>
+                  <th scope="col"><span className="sr-only">Aksi</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.data?.map((a) => (
+                  <AgentEditor key={a.id} agent={a} providers={providers.data ?? []} onSaved={agents.refresh} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+      <aside className="side">
+        {providers.data?.map((p) => <ProviderForm key={p.id} provider={p} onSaved={providers.refresh} />)}
+      </aside>
+    </main>
+  );
+}
+
+const STATUS_LABEL: Record<string, string> = { active: 'Aktif', inactive: 'Nonaktif', waiting_provider: 'Menunggu provider' };
+
+function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers: ProviderInfo[]; onSaved: () => void }) {
+  const [runtime, setRuntime] = useState(agent.runtime);
+  const [model, setModel] = useState(agent.model ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dirty = runtime !== agent.runtime || model !== (agent.model ?? '');
+  const orConfigured = providers.find((p) => p.id === 'openrouter')?.configured;
+
+  const save = async (status?: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.updateAgent(agent.id, { runtime, model: model.trim() || null, ...(status ? { status } : {}) });
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <tr>
+      <td>
+        <strong>{agent.name}</strong>
+        <div className="small muted">{agent.roleName}</div>
+        {error && <div className="error">{error}</div>}
+      </td>
+      <td>
+        <label className="sr-only" htmlFor={`rt-${agent.id}`}>Runtime {agent.name}</label>
+        <select id={`rt-${agent.id}`} value={runtime} onChange={(e) => setRuntime(e.target.value)}>
+          <option value="claude-cli">claude-cli</option>
+          <option value="openrouter">openrouter{orConfigured ? '' : ' (belum dipasang)'}</option>
+        </select>
+      </td>
+      <td>
+        <label className="sr-only" htmlFor={`model-${agent.id}`}>Model {agent.name}</label>
+        <input id={`model-${agent.id}`} value={model} onChange={(e) => setModel(e.target.value)} placeholder={runtime === 'claude-cli' ? 'sonnet' : 'vendor/model'} />
+      </td>
+      <td className="small">{STATUS_LABEL[agent.status] ?? agent.status}</td>
+      <td>
+        <div className="row">
+          <button type="button" className="btn btn-ghost" disabled={!dirty || busy} onClick={() => save()}>Simpan</button>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => save(agent.status === 'inactive' ? 'active' : 'inactive')}>
+            {agent.status === 'inactive' ? 'Aktifkan' : 'Nonaktifkan'}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function ProviderForm({ provider, onSaved }: { provider: ProviderInfo; onSaved: () => void }) {
+  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState(provider.defaultModel ?? '');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.setProvider(provider.id, { apiKey: apiKey.trim() || undefined, defaultModel: model.trim() });
+      setApiKey('');
+      setMsg({ ok: true, text: 'Tersimpan. Agent yang menunggu provider ini sudah diaktifkan.' });
+      onSaved();
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card" onSubmit={submit} aria-labelledby={`prov-${provider.id}`}>
+      <div className="row between">
+        <h2 id={`prov-${provider.id}`}>OpenRouter</h2>
+        <span className="chip">{provider.configured ? `Terpasang · ••••${provider.apiKeyLast4}` : 'Belum dipasang'}</span>
+      </div>
+      <div className="field">
+        <label htmlFor={`key-${provider.id}`}>API key{provider.configured ? ' (kosongkan untuk tetap memakai key lama)' : ''}</label>
+        <input id={`key-${provider.id}`} type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-or-…" />
+      </div>
+      <div className="field">
+        <label htmlFor={`dm-${provider.id}`}>Model default</label>
+        <input id={`dm-${provider.id}`} value={model} onChange={(e) => setModel(e.target.value)} placeholder="mis. vendor/nama-model" required minLength={3} />
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>Key disimpan terenkripsi oleh Virtual Office dan tidak pernah dikirim ke agent.</p>
+      {msg && <p className={msg.ok ? 'small' : 'error'} style={{ margin: 0 }}>{msg.text}</p>}
+      <button className="btn" type="submit" disabled={busy || model.trim().length < 3 || (!provider.configured && !apiKey.trim())}>
+        {busy ? 'Menyimpan…' : 'Simpan provider'}
+      </button>
+    </form>
+  );
+}

@@ -3,6 +3,7 @@ import { api, useLive } from './api';
 import { ObjectivePage } from './pages/ObjectivePage';
 import { ObjectivesPage } from './pages/ObjectivesPage';
 import { OfficePage } from './pages/OfficePage';
+import { SettingsPage } from './pages/SettingsPage';
 
 function useHashRoute() {
   const [hash, setHash] = useState(() => window.location.hash || '#/');
@@ -52,7 +53,7 @@ function QuotaMeter() {
 export function App() {
   const route = useHashRoute();
   const objectiveMatch = route.match(/^\/objectives\/([0-9a-f-]{36})$/);
-  const section = route.startsWith('/objectives') ? 'objectives' : 'office';
+  const section = route.startsWith('/objectives') ? 'objectives' : route.startsWith('/settings') ? 'settings' : 'office';
 
   return (
     <>
@@ -75,11 +76,22 @@ export function App() {
             <a href="#/objectives" aria-current={section === 'objectives' ? 'page' : undefined}>
               Objective
             </a>
+            <a href="#/settings" aria-current={section === 'settings' ? 'page' : undefined}>
+              Pengaturan
+            </a>
           </nav>
           <QuotaMeter />
         </div>
       </header>
-      {objectiveMatch ? <ObjectivePage id={objectiveMatch[1]!} /> : section === 'objectives' ? <ObjectivesPage /> : <OfficePage />}
+      {objectiveMatch ? (
+        <ObjectivePage id={objectiveMatch[1]!} />
+      ) : section === 'objectives' ? (
+        <ObjectivesPage />
+      ) : section === 'settings' ? (
+        <SettingsPage />
+      ) : (
+        <OfficePage />
+      )}
     </>
   );
 }

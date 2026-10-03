@@ -5,8 +5,9 @@ import type { OfficeContext, RuntimeLimits } from './orchestrator/context';
 import { ClaudeCliRuntime } from './runtimes/claude-cli';
 import { FakeRuntime } from './runtimes/fake';
 import type { AgentRuntime, RuntimeId } from './runtimes/runtime';
+import { SecretBox } from './secrets';
 
-/** Rakit context aplikasi dari config. OpenRouter menyusul (DESIGN.md langkah 10). */
+/** Rakit context aplikasi dari config. Runtime berbasis API didaftarkan oleh loadProviders. */
 export function createContext(config: Config, db: Db): OfficeContext {
   const runtimes = new Map<RuntimeId, AgentRuntime>([
     ['claude-cli', new ClaudeCliRuntime({ bin: config.claudeCli.bin, configDir: config.claudeCli.configDir })],
@@ -29,5 +30,6 @@ export function createContext(config: Config, db: Db): OfficeContext {
 
   const bus = new EventEmitter();
   bus.setMaxListeners(100);
-  return { db, bus, workspacesDir: config.workspacesDir, defaultModel: config.defaultModel, runtimes, limits, forceRuntime };
+  const secrets = SecretBox.load(config.secretKey, config.secretFile);
+  return { db, bus, workspacesDir: config.workspacesDir, defaultModel: config.defaultModel, runtimes, limits, forceRuntime, secrets };
 }

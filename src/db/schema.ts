@@ -163,3 +163,19 @@ export const events = mysqlTable(
   },
   (t) => [index('events_objective_idx').on(t.objectiveId, t.id)],
 );
+
+/** Provider runtime berbasis API (mis. OpenRouter). API key terenkripsi (src/secrets.ts). */
+export const providers = mysqlTable('providers', {
+  id: varchar('id', { length: 32 }).primaryKey(), // openrouter
+  apiKeyEnc: text('api_key_enc').notNull(),
+  apiKeyLast4: varchar('api_key_last4', { length: 8 }).notNull(),
+  defaultModel: varchar('default_model', { length: 128 }).notNull(),
+  updatedAt: ts('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+});
+
+/** Pengaturan Owner (mis. mode persetujuan keputusan). */
+export const settings = mysqlTable('settings', {
+  key: varchar('key', { length: 64 }).primaryKey(),
+  value: json('value').notNull(),
+  updatedAt: ts('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+});

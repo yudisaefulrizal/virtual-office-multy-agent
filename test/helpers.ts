@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
@@ -8,6 +9,7 @@ import type { OfficeContext, StoredEvent } from '../src/orchestrator/context';
 import { seedOrganization } from '../src/orchestrator/office';
 import { Worker } from '../src/orchestrator/worker';
 import { FakeRuntime, type FakeHandler } from '../src/runtimes/fake';
+import { SecretBox } from '../src/secrets';
 import { TEST_DB } from './global-setup';
 
 export async function setupOffice(handler?: FakeHandler, opts: { maxRunsPerWindow?: number } = {}) {
@@ -32,6 +34,7 @@ export async function setupOffice(handler?: FakeHandler, opts: { maxRunsPerWindo
     runtimes: new Map([['fake', runtime]]),
     limits: new Map([['fake', { concurrency: 1, costKind: 'actual', maxRunsPerWindow: opts.maxRunsPerWindow, windowHours: opts.maxRunsPerWindow ? 5 : undefined }]]),
     forceRuntime: 'fake',
+    secrets: new SecretBox(randomBytes(32).toString('hex')),
   };
   await seedOrganization(ctx);
   const worker = new Worker(ctx, { retryBackoffMs: 0 });

@@ -7,6 +7,7 @@ import { createDb } from './db/client';
 import { runMigrations } from './db/migrate';
 import { buildServer } from './interface/http/server';
 import { seedOrganization } from './orchestrator/office';
+import { loadProviders } from './orchestrator/providers';
 import { Worker } from './orchestrator/worker';
 
 await mkdir(config.workspacesDir, { recursive: true });
@@ -15,6 +16,7 @@ await runMigrations(config.databaseUrl);
 const { db, close } = createDb(config.databaseUrl);
 const ctx = createContext(config, db);
 await seedOrganization(ctx);
+await loadProviders(ctx);
 
 const worker = new Worker(ctx);
 await worker.start();

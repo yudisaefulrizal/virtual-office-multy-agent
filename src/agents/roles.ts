@@ -84,7 +84,7 @@ export interface AgentSeed {
   roleId: string;
   runtime: RuntimeId;
   supervisor?: string;
-  status?: 'active' | 'inactive';
+  status?: 'active' | 'inactive' | 'waiting_provider';
 }
 
 /** Karyawan awal. Market Researcher menunggu provider OpenRouter (DESIGN.md §4.5). */
@@ -95,7 +95,7 @@ export const INITIAL_AGENTS: AgentSeed[] = [
   { name: 'HRD', roleId: 'hrd', runtime: 'claude-cli', supervisor: 'CEO' },
   { name: 'Manager', roleId: 'manager', runtime: 'claude-cli', supervisor: 'CEO' },
   { name: 'Research Agent', roleId: 'researcher', runtime: 'claude-cli', supervisor: 'Manager' },
-  { name: 'Market Researcher', roleId: 'market_researcher', runtime: 'openrouter', supervisor: 'Manager', status: 'inactive' },
+  { name: 'Market Researcher', roleId: 'market_researcher', runtime: 'openrouter', supervisor: 'Manager', status: 'waiting_provider' },
   { name: 'Content Writer', roleId: 'content_writer', runtime: 'claude-cli', supervisor: 'Manager' },
 ];
 
