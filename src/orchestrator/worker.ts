@@ -10,6 +10,7 @@ import type { AgentRuntime, NativeToolPolicy, RunRequest, RunResult, RuntimeId }
 import { rowsOf, type Tx } from '../db/client';
 import { type Emit, type OfficeContext, withTx } from './context';
 import { knowledgePromptSection, searchKnowledge } from './knowledge';
+import { spentUsdMicros } from './budget';
 import { onTaskAborted, onTaskCompleted } from './office';
 import { scanOutDir } from './artifacts';
 
@@ -226,6 +227,12 @@ export class Worker {
       if (!row) throw new Error(`Task ${taskId} tidak ditemukan`);
       const { task, agent, role, objective } = row;
 
+      // Budget objective (biaya API nyata). Melewati batas → task ditunda, Owner diberi tahu.
+      if (objective.budgetUsdMicros != null) {
+        const spent = await spentUsdMicros(this.ctx.db, objective.id);
+        if (spent >= objective.budgetUsdMicros) return await this.budgetBlocked(task, spent, objective.budgetUsdMicros);
+      }
+
       const spec = kindSpec(task.kind);
       const workDir = path.join(this.ctx.workspacesDir, agent.workspacePath, 'tasks', task.id);
       await mkdir(path.join(workDir, 'out'), { recursive: true });
@@ -303,11 +310,25 @@ export class Worker {
       emit({ type: 'session.started', entityType: 'session', entityId: sessionId, objectiveId: task.objectiveId, actor: `agent:${agent.id}`, payload: { taskId: task.id, runtime: runtime.id, purpose } });
     });
 
+    const gateway = runtime.capabilities.has('tools') ? this.ctx.gateway : undefined;
+    const token = gateway?.issueToken({
+      agentId: agent.id,
+      agentName: agent.name,
+      roleId: agent.roleId,
+      taskId: task.id,
+      sessionId,
+      objectiveId: task.objectiveId,
+    });
     let res: RunResult;
     try {
-      res = await runtime.run({ ...req, sessionId, logPath: path.join(this.ctx.workspacesDir, logRel) }, signal);
+      res = await runtime.run(
+        { ...req, sessionId, logPath: path.join(this.ctx.workspacesDir, logRel), mcpServers: token ? gateway!.mcpServers(token) : undefined },
+        signal,
+      );
     } catch (err) {
       res = { status: 'error', externalSessionId: sessionId, output: null, error: String(err), usage: {}, durationMs: 0 };
+    } finally {
+      if (token) gateway!.revokeToken(token);
     }
 
     await withTx(this.ctx, async (tx, emit) => {
@@ -359,6 +380,18 @@ export class Worker {
         .where(eq(tasks.id, task.id));
       emit({ type: 'runtime.rate_limited', entityType: 'runtime', entityId: runtimeId, actor: 'orchestrator', payload: { until: until.toISOString() } });
       emit({ type: 'task.deferred', entityType: 'task', entityId: task.id, objectiveId: task.objectiveId, actor: 'orchestrator', payload: { until: until.toISOString() } });
+    });
+  }
+
+  private async budgetBlocked(task: TaskRow, spent: number, budget: number) {
+    const notBefore = new Date(Date.now() + 3600_000);
+    await withTx(this.ctx, async (tx, emit) => {
+      Task.assert('running', 'queued');
+      await tx
+        .update(tasks)
+        .set({ status: 'queued', attempt: Math.max(0, task.attempt - 1), notBefore, leaseUntil: null, error: 'Budget objective habis' })
+        .where(eq(tasks.id, task.id));
+      emit({ type: 'budget.exceeded', entityType: 'objective', entityId: task.objectiveId, objectiveId: task.objectiveId, actor: 'orchestrator', payload: { spentUsdMicros: spent, budgetUsdMicros: budget } });
     });
   }
 

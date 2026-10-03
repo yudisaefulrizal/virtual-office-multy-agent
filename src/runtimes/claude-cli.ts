@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AgentRuntime, Capability, NativeToolPolicy, RunRequest, RunResult } from './runtime';
 
@@ -28,6 +28,7 @@ export class ClaudeCliRuntime implements AgentRuntime {
     'workspace_files',
     'web_research',
     'resume',
+    'tools',
   ]);
 
   constructor(private opts: ClaudeCliOptions) {}
@@ -46,6 +47,10 @@ export class ClaudeCliRuntime implements AgentRuntime {
     if (req.resumeSessionId) args.push('--resume', req.resumeSessionId);
     else args.push('--session-id', req.sessionId);
     if (req.model) args.push('--model', req.model);
+    if (req.mcpServers?.length) {
+      // Izinkan semua tool dari server Gateway; izin per role ditegakkan Gateway.
+      args.push('--mcp-config', mcpConfigPath(req), '--allowedTools', req.mcpServers.map((m) => `mcp__${m.name}`).join(','));
+    }
     return args;
   }
 
@@ -65,6 +70,11 @@ export class ClaudeCliRuntime implements AgentRuntime {
     const log = createWriteStream(req.logPath, { flags: 'a' });
     log.write(`# ${new Date().toISOString()} session=${req.sessionId} resume=${req.resumeSessionId ?? '-'}\n`);
 
+    if (req.mcpServers?.length) {
+      // Di samping log sesi, di luar working directory agent. Berisi token sesi; dihapus setelah run.
+      const mcpServers = Object.fromEntries(req.mcpServers.map((m) => [m.name, { type: 'http', url: m.url, headers: m.headers }]));
+      await writeFile(mcpConfigPath(req), JSON.stringify({ mcpServers }), { mode: 0o600 });
+    }
     const child = spawn(this.opts.bin, this.buildArgs(req), {
       cwd: req.workDir,
       env: this.buildEnv(),
@@ -88,6 +98,7 @@ export class ClaudeCliRuntime implements AgentRuntime {
     clearTimeout(timer);
     signal.removeEventListener('abort', kill);
     await new Promise((r) => log.end(r));
+    if (req.mcpServers?.length) await rm(mcpConfigPath(req), { force: true });
 
     const base = { externalSessionId: req.resumeSessionId ?? req.sessionId, durationMs: Date.now() - started };
     if (signal.aborted) return { ...base, status: 'aborted', output: null, usage: {} };
@@ -95,6 +106,8 @@ export class ClaudeCliRuntime implements AgentRuntime {
     return { ...base, ...parseClaudeOutput(stdout, stderr, exitCode) };
   }
 }
+
+const mcpConfigPath = (req: RunRequest) => `${req.logPath}.mcp.json`;
 
 type Parsed = Omit<RunResult, 'externalSessionId' | 'durationMs'> & { externalSessionId?: string };
 

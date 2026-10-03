@@ -9,6 +9,7 @@ import { buildServer } from './interface/http/server';
 import { seedOrganization } from './orchestrator/office';
 import { loadProviders } from './orchestrator/providers';
 import { Worker } from './orchestrator/worker';
+import { Gateway } from './gateway/gateway';
 
 await mkdir(config.workspacesDir, { recursive: true });
 await runMigrations(config.databaseUrl);
@@ -17,6 +18,8 @@ const { db, close } = createDb(config.databaseUrl);
 const ctx = createContext(config, db);
 await seedOrganization(ctx);
 await loadProviders(ctx);
+// Agent menjangkau Gateway lewat loopback; token sesi membatasi aksesnya.
+ctx.gateway = new Gateway(ctx, `http://127.0.0.1:${config.port}`);
 
 const worker = new Worker(ctx);
 await worker.start();

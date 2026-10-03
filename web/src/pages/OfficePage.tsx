@@ -2,12 +2,13 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 import { api, useLive, useNow, type OfficeAgent } from '../api';
 import { ACTIVITY, TASK_STATUS, dateTime, duration, eventText, time } from '../format';
 import { lookFor } from '../office/look';
+import { Inbox } from './Inbox';
 import { NewObjective } from './NewObjective';
 
 const OfficeScene = lazy(() => import('../office/Scene').then((m) => ({ default: m.OfficeScene })));
 
 export function OfficePage() {
-  const { data, error } = useLive(api.office);
+  const { data, error, refresh } = useLive(api.office);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected = useMemo(() => {
@@ -65,25 +66,7 @@ export function OfficePage() {
 
       <aside className="side">
         {selected && <AgentDetail agent={selected} />}
-        {data.inbox.length > 0 && (
-          <section className="card" aria-labelledby="inbox">
-            <h2 id="inbox">Perlu Anda</h2>
-            {data.inbox.map((i) => (
-              <a key={i.taskId} href={i.kind === 'decision_pending' ? `#/decisions/${i.taskId}` : `#/objectives/${i.objectiveId}`} className="notice" style={{ color: 'var(--ink)', textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ fontWeight: 600 }}>
-                  {i.kind === 'task_failed'
-                    ? `Task gagal: ${i.title}`
-                    : i.kind === 'review_escalated'
-                      ? `Perlu keputusan Anda: ${i.title}`
-                      : i.kind === 'decision_pending'
-                        ? `Keputusan CEO menunggu: ${i.title}`
-                        : `Belum ada agent: ${i.title}`}
-                </span>
-                <span className="small muted">{i.detail}</span>
-              </a>
-            ))}
-          </section>
-        )}
+        <Inbox items={data.inbox} onChanged={refresh} />
         <NewObjective />
         <section className="card" aria-labelledby="feed">
           <h2 id="feed">Aktivitas</h2>

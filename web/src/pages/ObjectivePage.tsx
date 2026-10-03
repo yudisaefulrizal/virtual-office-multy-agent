@@ -45,6 +45,31 @@ export function ObjectivePage({ id }: { id: string }) {
         ))}
       </dl>
 
+      <BudgetCard id={objective.id} budget={data.budget} />
+
+      {data.toolExecutions.length > 0 && (
+        <section className="card" aria-labelledby="tools">
+          <h2 id="tools">Pemakaian tool</h2>
+          <div className="table-box">
+            <table style={{ minWidth: 560 }}>
+              <thead>
+                <tr><th scope="col">Waktu</th><th scope="col">Tool</th><th scope="col">Status</th><th scope="col">Detail</th></tr>
+              </thead>
+              <tbody>
+                {data.toolExecutions.map((x) => (
+                  <tr key={x.id}>
+                    <td className="mono small">{time(x.createdAt)}</td>
+                    <td className="mono small">{x.toolId}</td>
+                    <td>{TOOL_STATUS[x.status] ?? x.status}</td>
+                    <td className="small" style={{ wordBreak: 'break-word' }}>{x.error ?? JSON.stringify(x.result ?? x.args).slice(0, 200)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {decisions.some((d) => d.proposedBy !== 'owner') && (
         <section className="card" aria-labelledby="decisions">
           <h2 id="decisions">Keputusan CEO</h2>
@@ -291,5 +316,44 @@ function ArtifactView({ artifact }: { artifact: Artifact }) {
       </div>
       {open && textual && <pre className="artifact">{content ?? 'Memuat…'}</pre>}
     </div>
+  );
+}
+
+const TOOL_STATUS: Record<string, string> = {
+  executed: 'Dijalankan',
+  failed: 'Gagal',
+  denied: 'Ditolak (izin)',
+  pending_approval: 'Menunggu persetujuan',
+  rejected: 'Ditolak Owner',
+};
+
+function BudgetCard({ id, budget }: { id: string; budget: { budgetUsdMicros: number | null; spentUsdMicros: number } }) {
+  const [value, setValue] = useState(budget.budgetUsdMicros == null ? '' : String(budget.budgetUsdMicros / 1_000_000));
+  const [busy, setBusy] = useState(false);
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    await api.setBudget(id, value.trim() === '' ? null : Number(value)).catch(() => undefined);
+    setBusy(false);
+  };
+  const pct = budget.budgetUsdMicros ? Math.min(100, Math.round((budget.spentUsdMicros / budget.budgetUsdMicros) * 100)) : 0;
+  return (
+    <section className="card" aria-labelledby="budget">
+      <div className="row wrap between">
+        <h2 id="budget">Budget API</h2>
+        <span className="small muted">Biaya nyata (OpenRouter/API key). Kuota langganan Claude tidak dihitung.</span>
+      </div>
+      <div className="row wrap" style={{ gap: 16 }}>
+        <span>Terpakai <strong>{usd(budget.spentUsdMicros)}</strong>{budget.budgetUsdMicros != null && <> dari <strong>{usd(budget.budgetUsdMicros)}</strong></>}</span>
+        {budget.budgetUsdMicros != null && (
+          <div className={`meter${pct >= 80 ? ' warn' : ''}`} style={{ flex: '1 1 160px' }}><span style={{ width: `${pct}%` }} /></div>
+        )}
+      </div>
+      <form className="row wrap" onSubmit={save}>
+        <label htmlFor="budget-input" className="small">Batas (USD, kosong = tanpa batas)</label>
+        <input id="budget-input" type="number" min="0" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} style={{ width: 140 }} />
+        <button type="submit" className="btn btn-ghost" disabled={busy}>Simpan budget</button>
+      </form>
+    </section>
   );
 }

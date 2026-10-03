@@ -206,3 +206,53 @@ export const knowledge = mysqlTable(
   },
   (t) => [uniqueIndex('knowledge_topic_key_idx').on(t.topicKey), index('knowledge_category_idx').on(t.category)],
 );
+
+/** Persetujuan Owner untuk tindakan berisiko (DESIGN.md §21). Keputusan CEO memakai tabel decisions. */
+export const approvals = mysqlTable(
+  'approvals',
+  {
+    id: id().primaryKey(),
+    kind: varchar('kind', { length: 32 }).notNull(), // tool
+    status: status().notNull(), // pending | approved | rejected
+    objectiveId: id('objective_id'),
+    taskId: id('task_id'),
+    agentId: id('agent_id'),
+    toolId: varchar('tool_id', { length: 64 }),
+    args: json('args').notNull().default(emptyJson),
+    reason: text('reason'),
+    note: text('note'),
+    createdAt: createdAt(),
+    decidedAt: ts('decided_at'),
+  },
+  (t) => [index('approvals_status_idx').on(t.status, t.createdAt)],
+);
+
+/** Setiap pemanggilan tool lewat Gateway, termasuk yang ditolak (audit). */
+export const toolExecutions = mysqlTable(
+  'tool_executions',
+  {
+    id: id().primaryKey(),
+    toolId: varchar('tool_id', { length: 64 }).notNull(),
+    agentId: id('agent_id'),
+    taskId: id('task_id'),
+    sessionId: id('session_id'),
+    objectiveId: id('objective_id'),
+    approvalId: id('approval_id'),
+    args: json('args').notNull().default(emptyJson),
+    status: status().notNull(), // executed | failed | denied | pending_approval | rejected
+    result: json('result'),
+    error: text('error'),
+    createdAt: createdAt(),
+    finishedAt: ts('finished_at'),
+  },
+  (t) => [index('tool_executions_task_idx').on(t.taskId)],
+);
+
+/** Credential tool eksternal (mis. Instagram), terenkripsi seperti provider. */
+export const toolCredentials = mysqlTable('tool_credentials', {
+  toolId: varchar('tool_id', { length: 64 }).primaryKey(),
+  secretEnc: text('secret_enc').notNull(),
+  secretLast4: varchar('secret_last4', { length: 8 }).notNull(),
+  config: json('config').notNull().default(emptyJson),
+  updatedAt: ts('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+});

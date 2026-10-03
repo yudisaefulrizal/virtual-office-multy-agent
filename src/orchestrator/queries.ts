@@ -1,5 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import { agentSessions, agents, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks } from '../db/schema';
+import { agentSessions, agents, approvals, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks, toolCredentials, toolExecutions } from '../db/schema';
+import { ROLE_TOOLS, TOOLS, toolById } from '../gateway/tools';
+import { spentUsdMicros } from './budget';
 import type { RuntimeId } from '../runtimes/runtime';
 import type { OfficeContext } from './context';
 
@@ -142,7 +144,46 @@ export async function officeView(
     .innerJoin(objectives, eq(objectives.id, decisions.objectiveId))
     .where(eq(decisions.status, 'proposed'))
     .orderBy(desc(decisions.createdAt));
+  const pendingApprovals = await db
+    .select({ approval: approvals, agentName: agents.name })
+    .from(approvals)
+    .leftJoin(agents, eq(agents.id, approvals.agentId))
+    .where(eq(approvals.status, 'pending'))
+    .orderBy(desc(approvals.createdAt));
+  const budgetBlocked = await db
+    .selectDistinct({ objectiveId: tasks.objectiveId, title: objectives.title })
+    .from(tasks)
+    .innerJoin(objectives, eq(objectives.id, tasks.objectiveId))
+    .where(and(eq(tasks.status, 'queued'), eq(tasks.error, 'Budget objective habis')));
+  const notices = await db
+    .select()
+    .from(events)
+    .where(and(eq(events.type, 'owner.notified'), gt(events.createdAt, new Date(Date.now() - 24 * 3600_000))))
+    .orderBy(desc(events.id))
+    .limit(5);
+  const nameOf = new Map(agentRows.map((r) => [r.agent.id, r.agent.name]));
   const inbox = [
+    ...pendingApprovals.map(({ approval: a, agentName }) => ({
+      kind: 'approval_pending' as const,
+      taskId: a.id,
+      objectiveId: a.objectiveId ?? '',
+      title: `${toolById(a.toolId ?? '')?.title ?? a.toolId} — diminta ${agentName ?? 'agent'}`,
+      detail: JSON.stringify(a.args).slice(0, 240),
+    })),
+    ...budgetBlocked.map((b) => ({
+      kind: 'budget_exceeded' as const,
+      taskId: b.objectiveId,
+      objectiveId: b.objectiveId,
+      title: b.title,
+      detail: 'Budget API objective habis. Naikkan budget di halaman objective agar task berjalan lagi.',
+    })),
+    ...notices.map((n) => ({
+      kind: 'owner_notice' as const,
+      taskId: String(n.id),
+      objectiveId: n.objectiveId ?? '',
+      title: `${nameOf.get(n.actor.slice(6)) ?? 'Agent'}: ${(n.payload as { title?: string }).title ?? ''}`,
+      detail: String((n.payload as { message?: string }).message ?? '').slice(0, 300),
+    })),
     ...pendingDecisions.map((d) => ({
       kind: 'decision_pending' as const,
       taskId: d.id,
@@ -257,8 +298,14 @@ export async function objectiveTrace(ctx: OfficeContext, id: string) {
     { sessions: 0, inputTokens: 0, outputTokens: 0, costUsdMicros: 0 },
   );
 
+  const toolRows = taskIds.length
+    ? await db.select().from(toolExecutions).where(inArray(toolExecutions.taskId, taskIds)).orderBy(asc(toolExecutions.createdAt))
+    : [];
+
   return {
     objective,
+    budget: { budgetUsdMicros: objective.budgetUsdMicros, spentUsdMicros: await spentUsdMicros(db, id) },
+    toolExecutions: toolRows,
     decisions: decisionRows,
     projects: projectRows,
     tasks: taskRows.map(({ task, agentName }) => ({
@@ -317,4 +364,39 @@ export async function decisionDetail(ctx: OfficeContext, id: string) {
     history: history.map((h) => ({ id: h.id, status: h.status, createdAt: h.createdAt.toISOString(), reviewNote: h.reviewNote })),
     providers: [...ctx.runtimes.keys()],
   };
+}
+
+export async function listApprovals(ctx: OfficeContext, status?: string) {
+  const rows = await ctx.db
+    .select({ approval: approvals, agentName: agents.name, objectiveTitle: objectives.title })
+    .from(approvals)
+    .leftJoin(agents, eq(agents.id, approvals.agentId))
+    .leftJoin(objectives, eq(objectives.id, approvals.objectiveId))
+    .where(status ? eq(approvals.status, status) : undefined)
+    .orderBy(desc(approvals.createdAt))
+    .limit(100);
+  return rows.map((r) => ({
+    ...r.approval,
+    agentName: r.agentName,
+    objectiveTitle: r.objectiveTitle,
+    toolTitle: toolById(r.approval.toolId ?? '')?.title ?? r.approval.toolId,
+  }));
+}
+
+/** Katalog tool: risiko, role yang diizinkan, dan status credential (tanpa membocorkan isinya). */
+export async function listTools(ctx: OfficeContext) {
+  const creds = await ctx.db.select({ toolId: toolCredentials.toolId, last4: toolCredentials.secretLast4, config: toolCredentials.config }).from(toolCredentials);
+  return TOOLS.map((t) => {
+    const c = creds.find((x) => x.toolId === t.id);
+    return {
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      risk: t.risk,
+      roles: Object.entries(ROLE_TOOLS).filter(([, ids]) => ids.includes(t.id)).map(([r]) => r),
+      credential: t.credential
+        ? { label: t.credential.label, configFields: t.credential.configFields, configured: !!c, last4: c?.last4 ?? null, config: (c?.config as Record<string, string>) ?? {} }
+        : null,
+    };
+  });
 }

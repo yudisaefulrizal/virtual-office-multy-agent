@@ -5,6 +5,7 @@ import { events } from '../db/schema';
 import type { Actor } from '../domain';
 import type { AgentRuntime, RuntimeId } from '../runtimes/runtime';
 import type { SecretBox } from '../secrets';
+import type { Gateway } from '../gateway/gateway';
 
 export interface NewEvent {
   type: string;
@@ -36,6 +37,8 @@ export interface OfficeContext {
   forceRuntime?: RuntimeId;
   /** Enkripsi credential provider. */
   secrets: SecretBox;
+  /** Tool Gateway (MCP). Dipasang setelah server HTTP diketahui alamatnya. */
+  gateway?: Gateway;
 }
 
 export type Emit = (ev: NewEvent) => void;

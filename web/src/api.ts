@@ -49,7 +49,7 @@ export interface OfficeEvent {
 }
 
 export interface InboxItem {
-  kind: 'task_failed' | 'task_unassignable' | 'review_escalated' | 'decision_pending';
+  kind: 'task_failed' | 'task_unassignable' | 'review_escalated' | 'decision_pending' | 'approval_pending' | 'budget_exceeded' | 'owner_notice';
   taskId: string;
   objectiveId: string;
   title: string;
@@ -130,8 +130,31 @@ export interface TraceTask {
   artifacts: Artifact[];
 }
 
+export interface ToolExecution {
+  id: string;
+  toolId: string;
+  agentId: string | null;
+  taskId: string | null;
+  status: string;
+  args: Record<string, unknown>;
+  result: unknown;
+  error: string | null;
+  createdAt: string;
+}
+
+export interface ToolInfo {
+  id: string;
+  title: string;
+  description: string;
+  risk: 'low' | 'high';
+  roles: string[];
+  credential: { label: string; configFields: { key: string; label: string }[]; configured: boolean; last4: string | null; config: Record<string, string> } | null;
+}
+
 export interface ObjectiveTrace {
-  objective: ObjectiveSummary & { updatedAt: string };
+  objective: ObjectiveSummary & { updatedAt: string; budgetUsdMicros: number | null };
+  budget: { budgetUsdMicros: number | null; spentUsdMicros: number };
+  toolExecutions: ToolExecution[];
   decisions: { id: string; status: string; proposedBy: string; content: { strategy?: string }; createdAt: string }[];
   projects: { id: string; title: string; status: string; planTemplate: { summary: string; review_focus: string } | null }[];
   tasks: TraceTask[];
@@ -243,6 +266,13 @@ export const api = {
     request<KnowledgeItem[]>(`/api/knowledge?${new URLSearchParams({ ...(q ? { q } : {}), ...(category ? { category } : {}) })}`),
   deleteKnowledge: (id: string) => request<{ ok: boolean }>(`/api/knowledge/${id}`, { method: 'DELETE' }),
   settings: () => request<Settings>('/api/settings'),
+  decideApproval: (id: string, action: 'approve' | 'reject', note?: string) =>
+    request<{ ok: boolean; message?: string }>(`/api/approvals/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) }),
+  tools: () => request<ToolInfo[]>('/api/tools'),
+  setToolCredential: (id: string, body: { secret?: string; config: Record<string, string> }) =>
+    request<ToolInfo[]>(`/api/tools/${id}/credential`, { method: 'PUT', body: JSON.stringify(body) }),
+  setBudget: (id: string, budgetUsd: number | null) =>
+    request<{ ok: boolean }>(`/api/objectives/${id}`, { method: 'PATCH', body: JSON.stringify({ budgetUsd }) }),
   updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>
     request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

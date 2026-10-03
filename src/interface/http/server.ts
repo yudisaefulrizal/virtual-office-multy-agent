@@ -10,8 +10,10 @@ import { agentSessions, agents, artifacts, knowledge, roles } from '../../db/sch
 import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator/context';
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { createObjective } from '../../orchestrator/office';
+import { setObjectiveBudget } from '../../orchestrator/budget';
+import { registerMcp } from '../../gateway/mcp';
 import { PROVIDER_IDS, listProviders, setProvider, updateAgent } from '../../orchestrator/providers';
-import { decisionDetail, listDecisions, listObjectives, objectiveTrace, officeView } from '../../orchestrator/queries';
+import { decisionDetail, listApprovals, listDecisions, listObjectives, listTools, objectiveTrace, officeView } from '../../orchestrator/queries';
 import { type SettingKey, getAllSettings, setSetting } from '../../orchestrator/settings';
 import { approveDecision, rejectDecision, reviseDecision } from '../../orchestrator/strategy';
 import type { Worker } from '../../orchestrator/worker';
@@ -112,6 +114,41 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
       await tx.delete(knowledge).where(eq(knowledge.id, id));
       emit({ type: 'knowledge.deleted', entityType: 'knowledge', entityId: id, actor: 'owner' });
     });
+    return { ok: true };
+  });
+
+  if (ctx.gateway) registerMcp(app, ctx.gateway);
+
+  app.get('/api/approvals', async (req) => {
+    const { status } = z.object({ status: z.enum(['pending', 'approved', 'rejected']).optional() }).parse(req.query);
+    return listApprovals(ctx, status);
+  });
+  app.post('/api/approvals/:id/approve', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    if (!ctx.gateway) return reply.status(503).send({ error: 'Gateway tidak aktif' });
+    return ctx.gateway.approve(id, NoteBody.parse(req.body ?? {}).note);
+  });
+  app.post('/api/approvals/:id/reject', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    if (!ctx.gateway) return reply.status(503).send({ error: 'Gateway tidak aktif' });
+    await ctx.gateway.reject(id, NoteBody.parse(req.body ?? {}).note);
+    return { ok: true };
+  });
+
+  app.get('/api/tools', () => listTools(ctx));
+  app.put('/api/tools/:id/credential', async (req, reply) => {
+    const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
+    const body = z.object({ secret: z.string().trim().max(2000).optional(), config: z.record(z.string(), z.string().max(200)).default({}) }).parse(req.body);
+    if (!ctx.gateway) return reply.status(503).send({ error: 'Gateway tidak aktif' });
+    await ctx.gateway.setCredential(id, body.secret, body.config);
+    return listTools(ctx);
+  });
+
+  app.patch('/api/objectives/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const body = z.object({ budgetUsd: z.number().min(0).max(100_000).nullable() }).parse(req.body);
+    await setObjectiveBudget(ctx, id, body.budgetUsd);
+    void worker.tick();
     return { ok: true };
   });
 

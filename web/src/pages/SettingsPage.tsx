@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { api, useLive, type AgentRow, type ProviderInfo } from '../api';
+import { api, useLive, type AgentRow, type ProviderInfo, type ToolInfo } from '../api';
 
 export function SettingsPage() {
   const providers = useLive(api.providers);
   const agents = useLive(api.agents);
+  const tools = useLive(api.tools);
 
   return (
     <main className="page split">
@@ -34,8 +35,31 @@ export function SettingsPage() {
             </table>
           </div>
         </section>
+        <section className="card" aria-labelledby="tools">
+          <h2 id="tools">Tool Gateway</h2>
+          <p className="small muted" style={{ margin: 0 }}>
+            Agent memakai tool eksternal lewat Gateway Virtual Office, bukan langsung. Tool berisiko tinggi tidak dijalankan sampai Anda menyetujuinya.
+          </p>
+          <div className="table-box">
+            <table style={{ minWidth: 560 }}>
+              <thead>
+                <tr><th scope="col">Tool</th><th scope="col">Risiko</th><th scope="col">Role yang diizinkan</th></tr>
+              </thead>
+              <tbody>
+                {tools.data?.map((t) => (
+                  <tr key={t.id}>
+                    <td><strong>{t.title}</strong><div className="small muted">{t.description}</div></td>
+                    <td>{t.risk === 'high' ? <span style={{ color: 'var(--orange-ink)', fontWeight: 600 }}>Tinggi · butuh persetujuan</span> : 'Rendah'}</td>
+                    <td className="mono small">{t.roles.join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
       <aside className="side">
+        {tools.data?.filter((t) => t.credential).map((t) => <ToolCredentialForm key={t.id} tool={t} onSaved={tools.refresh} />)}
         {providers.data?.map((p) => <ProviderForm key={p.id} provider={p} onSaved={providers.refresh} />)}
       </aside>
     </main>
@@ -137,6 +161,52 @@ function ProviderForm({ provider, onSaved }: { provider: ProviderInfo; onSaved: 
       <button className="btn" type="submit" disabled={busy || model.trim().length < 3 || (!provider.configured && !apiKey.trim())}>
         {busy ? 'Menyimpan…' : 'Simpan provider'}
       </button>
+    </form>
+  );
+}
+
+function ToolCredentialForm({ tool, onSaved }: { tool: ToolInfo; onSaved: () => void }) {
+  const cred = tool.credential!;
+  const [secret, setSecret] = useState('');
+  const [config, setConfig] = useState<Record<string, string>>(cred.config);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.setToolCredential(tool.id, { secret: secret.trim() || undefined, config });
+      setSecret('');
+      setMsg({ ok: true, text: 'Tersimpan.' });
+      onSaved();
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card" onSubmit={submit} aria-labelledby={`tool-${tool.id}`}>
+      <div className="row between">
+        <h2 id={`tool-${tool.id}`}>{tool.title}</h2>
+        <span className="chip">{cred.configured ? `Terpasang · ••••${cred.last4}` : 'Belum dipasang'}</span>
+      </div>
+      <div className="field">
+        <label htmlFor={`sec-${tool.id}`}>{cred.label}{cred.configured ? ' (kosongkan untuk tetap memakai yang lama)' : ''}</label>
+        <input id={`sec-${tool.id}`} type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+      </div>
+      {cred.configFields.map((f) => (
+        <div key={f.key} className="field">
+          <label htmlFor={`cfg-${tool.id}-${f.key}`}>{f.label}</label>
+          <input id={`cfg-${tool.id}-${f.key}`} value={config[f.key] ?? ''} onChange={(e) => setConfig({ ...config, [f.key]: e.target.value })} />
+        </div>
+      ))}
+      <p className="small muted" style={{ margin: 0 }}>Disimpan terenkripsi. Hanya Gateway yang memakainya, setelah Anda menyetujui permintaan agent.</p>
+      {msg && <p className={msg.ok ? 'small' : 'error'} style={{ margin: 0 }}>{msg.text}</p>}
+      <button className="btn" type="submit" disabled={busy || (!cred.configured && !secret.trim())}>{busy ? 'Menyimpan…' : 'Simpan credential'}</button>
     </form>
   );
 }

@@ -43,6 +43,13 @@
       "when": 1790987189214,
       "tag": "0005_knowledge",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1790987327400,
+      "tag": "0006_gateway",
+      "breakpoints": true
     }
   ]
 }

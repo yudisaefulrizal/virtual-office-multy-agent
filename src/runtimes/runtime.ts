@@ -6,7 +6,8 @@
 
 export type RuntimeId = 'claude-cli' | 'openrouter' | 'fake';
 
-export type Capability = 'structured_output' | 'workspace_files' | 'web_research' | 'resume';
+/** tools: bisa memanggil Tool Gateway (MCP). */
+export type Capability = 'structured_output' | 'workspace_files' | 'web_research' | 'resume' | 'tools';
 
 /** Akses tools bawaan runtime. Tool eksternal nanti lewat Tool Gateway. */
 export type NativeToolPolicy = 'read_only' | 'workspace_write' | 'research';
@@ -24,6 +25,8 @@ export interface RunRequest {
   model?: string;
   timeoutMs: number;
   logPath: string;
+  /** Tool Gateway milik Virtual Office (MCP over HTTP), dengan token sesi. */
+  mcpServers?: { name: string; url: string; headers: Record<string, string> }[];
 }
 
 export type RunStatus = 'ok' | 'error' | 'timeout' | 'aborted' | 'rate_limited';

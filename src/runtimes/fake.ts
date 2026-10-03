@@ -11,7 +11,7 @@ export type FakeHandler = (req: RunRequest, call: number) => Promise<Partial<Run
 export class FakeRuntime implements AgentRuntime {
   readonly id = 'fake' as const;
   // Mensimulasikan semua kemampuan claude-cli, termasuk riset web.
-  readonly capabilities: ReadonlySet<Capability> = new Set(['structured_output', 'workspace_files', 'web_research', 'resume']);
+  readonly capabilities: ReadonlySet<Capability> = new Set(['structured_output', 'workspace_files', 'web_research', 'resume', 'tools']);
   calls: RunRequest[] = [];
 
   constructor(
