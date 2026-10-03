@@ -56,8 +56,23 @@ export interface InboxItem {
   detail: string;
 }
 
+export interface ScheduleInput {
+  kind: 'daily' | 'interval';
+  timeOfDay?: string;
+  intervalHours?: number;
+  timezone?: string;
+  enabled?: boolean;
+}
+
+export interface Schedule extends ScheduleInput {
+  id: string;
+  nextRunAt: string;
+  lastRunAt: string | null;
+}
+
 export interface OfficeView {
   forceRuntime: string | null;
+  nextRun: { objectiveId: string; title: string; at: string } | null;
   meeting: { objectiveId: string; title: string; participants: string[] } | null;
   agents: OfficeAgent[];
   runtimes: RuntimeInfo[];
@@ -154,6 +169,7 @@ export interface ToolInfo {
 export interface ObjectiveTrace {
   objective: ObjectiveSummary & { updatedAt: string; budgetUsdMicros: number | null };
   budget: { budgetUsdMicros: number | null; spentUsdMicros: number };
+  schedule: Schedule | null;
   toolExecutions: ToolExecution[];
   decisions: { id: string; status: string; proposedBy: string; content: { strategy?: string }; createdAt: string }[];
   projects: { id: string; title: string; status: string; planTemplate: { summary: string; review_focus: string } | null }[];
@@ -254,8 +270,10 @@ export const api = {
   office: () => request<OfficeView>('/api/office'),
   objectives: () => request<ObjectiveSummary[]>('/api/objectives'),
   objective: (id: string) => request<ObjectiveTrace>(`/api/objectives/${id}`),
-  createObjective: (title: string, description: string, mode: ObjectiveMode) =>
-    request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description, mode }) }),
+  createObjective: (title: string, description: string, mode: ObjectiveMode, schedule?: ScheduleInput) =>
+    request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description, mode, schedule }) }),
+  setSchedule: (id: string, schedule: ScheduleInput | null) =>
+    request<{ ok: boolean }>(`/api/objectives/${id}/schedule`, schedule ? { method: 'PUT', body: JSON.stringify(schedule) } : { method: 'DELETE' }),
   cancelTask: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}/cancel`, { method: 'POST' }),
   providers: () => request<ProviderInfo[]>('/api/providers'),
   decisions: () => request<DecisionSummary[]>('/api/decisions'),

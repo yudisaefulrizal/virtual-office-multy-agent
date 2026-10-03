@@ -11,12 +11,14 @@ import { rowsOf, type Tx } from '../db/client';
 import { type Emit, type OfficeContext, withTx } from './context';
 import { knowledgePromptSection, searchKnowledge } from './knowledge';
 import { spentUsdMicros } from './budget';
+import { runDueSchedules } from './scheduler';
 import { onTaskAborted, onTaskCompleted } from './office';
 import { scanOutDir } from './artifacts';
 
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 30_000;
 const RATE_LIMIT_FALLBACK_MS = 30 * 60_000;
+const SCHEDULE_CHECK_MS = 15_000;
 
 export interface WorkerOptions {
   pollMs?: number;
@@ -100,12 +102,18 @@ export class Worker {
     }
   }
 
+  private lastScheduleCheck = 0;
+
   async tick(): Promise<number> {
     if (this.ticking) return 0;
     this.ticking = true;
     let started = 0;
     try {
       await this.recoverOrphans(false);
+      if (Date.now() - this.lastScheduleCheck >= SCHEDULE_CHECK_MS) {
+        this.lastScheduleCheck = Date.now();
+        await runDueSchedules(this.ctx).catch((err) => console.error('[scheduler]', err));
+      }
       for (const [id, runtime] of this.ctx.runtimes) {
         while (await this.hasCapacity(id)) {
           const taskId = await this.claim(id);

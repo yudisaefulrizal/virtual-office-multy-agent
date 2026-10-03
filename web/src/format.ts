@@ -79,6 +79,10 @@ const EVENT_TEXT: Record<string, string> = {
   'owner.notified': 'mengirim pesan ke Owner',
   'budget.exceeded': 'menahan task: budget habis',
   'budget.updated': 'mengubah budget',
+  'schedule.updated': 'mengatur jadwal',
+  'schedule.removed': 'menghapus jadwal',
+  'schedule.ran': 'menjalankan run terjadwal',
+  'schedule.skipped': 'melewati run terjadwal',
   'knowledge.updated': 'memverifikasi ulang knowledge',
   'knowledge.deleted': 'menghapus knowledge',
   'review.accepted': 'menerima hasil kerja',
@@ -129,3 +133,7 @@ export const KIND_LABEL: Record<string, string> = {
   work: 'Kerja',
   review: 'Review',
 };
+
+export function describeSchedule(s: { kind: string; timeOfDay?: string | null; intervalHours?: number | null; timezone?: string }) {
+  return s.kind === 'daily' ? `Setiap hari ${s.timeOfDay} (${s.timezone ?? 'Asia/Jakarta'})` : `Setiap ${s.intervalHours} jam`;
+}

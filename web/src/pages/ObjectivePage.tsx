@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { api, useLive, type Artifact, type TraceTask } from '../api';
-import { DECISION_STATUS, KIND_LABEL, SESSION_STATUS, TASK_STATUS, dateTime, duration, eventText, time, tokens, usd } from '../format';
+import { api, useLive, type Artifact, type Schedule, type TraceTask } from '../api';
+import { DECISION_STATUS, KIND_LABEL, describeSchedule, SESSION_STATUS, TASK_STATUS, dateTime, duration, eventText, time, tokens, usd } from '../format';
 
 export function ObjectivePage({ id }: { id: string }) {
   const { data, error } = useLive(() => api.objective(id), [id]);
@@ -45,7 +45,10 @@ export function ObjectivePage({ id }: { id: string }) {
         ))}
       </dl>
 
-      <BudgetCard id={objective.id} budget={data.budget} />
+      <div className="row wrap" style={{ alignItems: 'stretch', gap: 24 }}>
+        <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex' }}><ScheduleCard id={objective.id} schedule={data.schedule} status={objective.status} /></div>
+        <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex' }}><BudgetCard id={objective.id} budget={data.budget} /></div>
+      </div>
 
       {data.toolExecutions.length > 0 && (
         <section className="card" aria-labelledby="tools">
@@ -338,7 +341,7 @@ function BudgetCard({ id, budget }: { id: string; budget: { budgetUsdMicros: num
   };
   const pct = budget.budgetUsdMicros ? Math.min(100, Math.round((budget.spentUsdMicros / budget.budgetUsdMicros) * 100)) : 0;
   return (
-    <section className="card" aria-labelledby="budget">
+    <section className="card" aria-labelledby="budget" style={{ flex: 1 }}>
       <div className="row wrap between">
         <h2 id="budget">Budget API</h2>
         <span className="small muted">Biaya nyata (OpenRouter/API key). Kuota langganan Claude tidak dihitung.</span>
@@ -354,6 +357,51 @@ function BudgetCard({ id, budget }: { id: string; budget: { budgetUsdMicros: num
         <input id="budget-input" type="number" min="0" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} style={{ width: 140 }} />
         <button type="submit" className="btn btn-ghost" disabled={busy}>Simpan budget</button>
       </form>
+    </section>
+  );
+}
+
+function ScheduleCard({ id, schedule, status }: { id: string; schedule: Schedule | null; status: string }) {
+  const [time, setTime] = useState(schedule?.timeOfDay ?? '09:00');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const closed = ['failed', 'cancelled'].includes(status);
+  return (
+    <section className="card" aria-labelledby="schedule" style={{ flex: 1 }}>
+      <h2 id="schedule">Jadwal</h2>
+      {schedule ? (
+        <>
+          <span>
+            <strong>{describeSchedule(schedule)}</strong> · {schedule.enabled ? `run berikutnya ${dateTime(schedule.nextRunAt)}` : 'dijeda'}
+          </span>
+          {schedule.lastRunAt && <span className="small muted">Run terakhir {dateTime(schedule.lastRunAt)}</span>}
+          <div className="row wrap">
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(() => api.setSchedule(id, { ...schedule, enabled: !schedule.enabled }))}>
+              {schedule.enabled ? 'Jeda' : 'Lanjutkan'}
+            </button>
+            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => run(() => api.setSchedule(id, null))}>Hapus jadwal</button>
+          </div>
+        </>
+      ) : (
+        <form className="row wrap" onSubmit={(e) => (e.preventDefault(), run(() => api.setSchedule(id, { kind: 'daily', timeOfDay: time })))}>
+          <span className="small muted" style={{ flexBasis: '100%' }}>Belum berulang. Jadikan run harian dengan rencana kerja yang sama.</span>
+          <label htmlFor="sched-time" className="small">Setiap hari jam</label>
+          <input id="sched-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} style={{ width: 130 }} disabled={closed} />
+          <button type="submit" className="btn btn-ghost" disabled={busy || closed}>Jadwalkan</button>
+        </form>
+      )}
+      {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   uniqueIndex,
   datetime,
   index,
@@ -255,4 +256,18 @@ export const toolCredentials = mysqlTable('tool_credentials', {
   secretLast4: varchar('secret_last4', { length: 8 }).notNull(),
   config: json('config').notNull().default(emptyJson),
   updatedAt: ts('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+});
+
+/** Jadwal objective berulang (DESIGN.md §24): menjalankan ulang rencana, bukan strategi. */
+export const schedules = mysqlTable('schedules', {
+  id: id().primaryKey(),
+  objectiveId: id('objective_id').notNull().unique().references(() => objectives.id),
+  kind: varchar('kind', { length: 16 }).notNull(), // daily | interval
+  timeOfDay: varchar('time_of_day', { length: 5 }), // HH:MM, untuk daily
+  timezone: varchar('timezone', { length: 64 }).notNull().default('Asia/Jakarta'),
+  intervalHours: int('interval_hours'),
+  enabled: boolean('enabled').notNull().default(true),
+  nextRunAt: ts('next_run_at').notNull(),
+  lastRunAt: ts('last_run_at'),
+  createdAt: createdAt(),
 });

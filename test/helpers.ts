@@ -17,7 +17,7 @@ export async function setupOffice(handler?: FakeHandler, opts: { maxRunsPerWindo
   // FOREIGN_KEY_CHECKS bersifat per sesi: jalankan di satu koneksi lewat transaksi.
   await db.transaction(async (tx) => {
     await tx.execute(sql`set foreign_key_checks = 0`);
-    for (const t of ['events', 'artifacts', 'agent_sessions', 'task_dependencies', 'tasks', 'projects', 'decisions', 'objectives', 'agents', 'roles', 'settings', 'providers', 'knowledge']) {
+    for (const t of ['events', 'artifacts', 'agent_sessions', 'task_dependencies', 'tasks', 'projects', 'decisions', 'objectives', 'agents', 'roles', 'settings', 'providers', 'knowledge', 'approvals', 'tool_executions', 'tool_credentials', 'schedules']) {
       await tx.execute(sql.raw(`delete from ${t}`));
     }
     await tx.execute(sql`set foreign_key_checks = 1`);

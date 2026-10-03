@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import { agentSessions, agents, approvals, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks, toolCredentials, toolExecutions } from '../db/schema';
+import { agentSessions, agents, approvals, schedules, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks, toolCredentials, toolExecutions } from '../db/schema';
 import { ROLE_TOOLS, TOOLS, toolById } from '../gateway/tools';
 import { spentUsdMicros } from './budget';
 import type { RuntimeId } from '../runtimes/runtime';
@@ -217,9 +217,18 @@ export async function officeView(
       }
     : null;
 
+  const [next] = await db
+    .select({ objectiveId: schedules.objectiveId, at: schedules.nextRunAt, title: objectives.title })
+    .from(schedules)
+    .innerJoin(objectives, eq(objectives.id, schedules.objectiveId))
+    .where(and(eq(schedules.enabled, true), eq(objectives.status, 'active')))
+    .orderBy(asc(schedules.nextRunAt))
+    .limit(1);
+
   return {
     forceRuntime: ctx.forceRuntime ?? null,
     meeting,
+    nextRun: next ? { objectiveId: next.objectiveId, title: next.title, at: next.at.toISOString() } : null,
     agents: agentsOut,
     runtimes: runtimesOut,
     inbox,
@@ -302,8 +311,11 @@ export async function objectiveTrace(ctx: OfficeContext, id: string) {
     ? await db.select().from(toolExecutions).where(inArray(toolExecutions.taskId, taskIds)).orderBy(asc(toolExecutions.createdAt))
     : [];
 
+  const [schedule] = await db.select().from(schedules).where(eq(schedules.objectiveId, id));
+
   return {
     objective,
+    schedule: schedule ?? null,
     budget: { budgetUsdMicros: objective.budgetUsdMicros, spentUsdMicros: await spentUsdMicros(db, id) },
     toolExecutions: toolRows,
     decisions: decisionRows,

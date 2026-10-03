@@ -11,6 +11,7 @@ import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { createObjective } from '../../orchestrator/office';
 import { setObjectiveBudget } from '../../orchestrator/budget';
+import { setSchedule } from '../../orchestrator/scheduler';
 import { registerMcp } from '../../gateway/mcp';
 import { PROVIDER_IDS, listProviders, setProvider, updateAgent } from '../../orchestrator/providers';
 import { decisionDetail, listApprovals, listDecisions, listObjectives, listTools, objectiveTrace, officeView } from '../../orchestrator/queries';
@@ -22,6 +23,14 @@ const CreateObjectiveBody = z.object({
   title: z.string().trim().min(3).max(200),
   description: z.string().trim().max(5000).optional(),
   mode: z.enum(['strategic', 'planned', 'direct']).optional(),
+  schedule: z.lazy(() => ScheduleBody).optional(),
+});
+const ScheduleBody = z.object({
+  kind: z.enum(['daily', 'interval']),
+  timeOfDay: z.string().optional(),
+  intervalHours: z.number().int().optional(),
+  timezone: z.string().max(64).optional(),
+  enabled: z.boolean().optional(),
 });
 const IdParams = z.object({ id: z.uuid() });
 
@@ -40,8 +49,9 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
   app.get('/api/objectives', () => listObjectives(ctx));
 
   app.post('/api/objectives', async (req, reply) => {
-    const body = CreateObjectiveBody.parse(req.body);
+    const { schedule, ...body } = CreateObjectiveBody.parse(req.body);
     const created = await createObjective(ctx, body);
+    if (schedule) await setSchedule(ctx, created.objectiveId, schedule);
     void worker.tick();
     return reply.status(201).send(created);
   });
@@ -142,6 +152,17 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     if (!ctx.gateway) return reply.status(503).send({ error: 'Gateway tidak aktif' });
     await ctx.gateway.setCredential(id, body.secret, body.config);
     return listTools(ctx);
+  });
+
+  app.put('/api/objectives/:id/schedule', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await setSchedule(ctx, id, ScheduleBody.parse(req.body));
+    return { ok: true };
+  });
+  app.delete('/api/objectives/:id/schedule', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await setSchedule(ctx, id, null);
+    return { ok: true };
   });
 
   app.patch('/api/objectives/:id', async (req) => {

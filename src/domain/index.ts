@@ -27,7 +27,8 @@ export const Objective = stateMachine<ObjectiveStatus>('Objective', {
   strategizing: ['awaiting_approval', 'failed', 'cancelled'],
   awaiting_approval: ['strategizing', 'active', 'cancelled'],
   active: ['completed', 'failed', 'cancelled'],
-  completed: [],
+  // Diaktifkan ulang hanya saat Owner menjadikannya objective berulang (jadwal).
+  completed: ['active'],
   failed: [],
   cancelled: [],
 });

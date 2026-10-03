@@ -36,6 +36,11 @@ export function OfficePage() {
               <div style={{ fontWeight: 600, fontSize: 16 }}>
                 {data.agents.length} karyawan · {working} sedang bekerja
               </div>
+              {data.nextRun && (
+                <a href={`#/objectives/${data.nextRun.objectiveId}`} className="small" style={{ color: '#c9d6ff' }}>
+                  Run berikutnya {dateTime(data.nextRun.at)} · {data.nextRun.title}
+                </a>
+              )}
             </div>
             <div className="row wrap">
               {data.runtimes.map((r) => (

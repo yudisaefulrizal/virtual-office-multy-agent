@@ -11,7 +11,7 @@ import {
 } from '../agents/roles';
 import { kindSpec, topoOrder, type DecisionProposal, type Framing, type Plan, type Review } from '../agents/schemas';
 import type { Tx } from '../db/client';
-import { agents, decisions, objectives, projects, roles, taskDependencies, tasks } from '../db/schema';
+import { agents, decisions, objectives, projects, roles, schedules, taskDependencies, tasks } from '../db/schema';
 import { Objective, Project, type Actor, type ObjectiveStatus, type ProjectStatus, type TaskKind, type TaskStatus } from '../domain';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
 import { type KnowledgeInput, upsertKnowledge } from './knowledge';
@@ -258,29 +258,45 @@ export async function onTaskAborted(tx: Tx, emit: Emit, task: TaskRow) {
 }
 
 async function materializePlan(tx: Tx, emit: Emit, planning: TaskRow, plan: Plan) {
+  await tx.update(projects).set({ planTemplate: plan }).where(eq(projects.id, planning.projectId!));
+  const actor: Actor = `agent:${planning.assignedAgentId}`;
+  await createPlanTasks(tx, emit, { objectiveId: planning.objectiveId, projectId: planning.projectId!, actor }, plan, true);
+  emit({ type: 'plan.created', entityType: 'project', entityId: planning.projectId!, objectiveId: planning.objectiveId, actor, payload: { tasks: plan.tasks.length, summary: plan.summary } });
+}
+
+/**
+ * Buat task dari rencana (urutan topologis, dependency per key), ditutup task review.
+ * Dipakai saat Manager selesai merencanakan dan saat scheduler mengulang run.
+ */
+export async function createPlanTasks(
+  tx: Tx,
+  emit: Emit,
+  target: { objectiveId: string; projectId: string; actor: Actor },
+  plan: Plan,
+  withReview: boolean,
+) {
   const ordered = topoOrder(plan);
   if (!ordered) throw new Error('Rencana tidak valid (siklus) lolos validasi');
-  await tx.update(projects).set({ planTemplate: plan }).where(eq(projects.id, planning.projectId!));
-
   const idByKey = new Map<string, string>();
   for (const t of ordered) {
     const id = await insertTask(tx, emit, {
-      objectiveId: planning.objectiveId,
-      projectId: planning.projectId!,
+      objectiveId: target.objectiveId,
+      projectId: target.projectId,
       kind: PLANNABLE_ROLES[t.role]!.kind,
       title: t.title,
       instructions: t.instructions,
       roleId: t.role,
       planKey: t.key,
       dependsOn: t.depends_on.map((k) => idByKey.get(k)!),
-      requestedBy: `agent:${planning.assignedAgentId}`,
+      requestedBy: target.actor,
     });
     idByKey.set(t.key, id);
   }
+  if (!withReview) return;
   const planKeys = plan.tasks.map((t) => t.key);
   await insertTask(tx, emit, {
-    objectiveId: planning.objectiveId,
-    projectId: planning.projectId!,
+    objectiveId: target.objectiveId,
+    projectId: target.projectId,
     kind: 'review',
     title: 'Review hasil',
     instructions: reviewInstructions(plan.review_focus, 1),
@@ -288,9 +304,8 @@ async function materializePlan(tx: Tx, emit: Emit, planning: TaskRow, plan: Plan
     planKey: 'review-1',
     input: { planKeys, reviewFocus: plan.review_focus, round: 1 },
     dependsOn: [...idByKey.values()],
-    requestedBy: `agent:${planning.assignedAgentId}`,
+    requestedBy: target.actor,
   });
-  emit({ type: 'plan.created', entityType: 'project', entityId: planning.projectId!, objectiveId: planning.objectiveId, actor: `agent:${planning.assignedAgentId}`, payload: { tasks: plan.tasks.length, summary: plan.summary } });
 }
 
 /** Versi terbaru setiap plan key (revisi memakai key yang sama). */
@@ -383,7 +398,9 @@ export async function onTaskFinished(tx: Tx, emit: Emit, task: { projectId: stri
     .from(projects)
     .where(and(eq(projects.objectiveId, task.objectiveId), eq(projects.status, 'active')));
   const [objective] = await tx.select().from(objectives).where(eq(objectives.id, task.objectiveId));
-  if (objective && open.length === 0 && objective.status === 'active') {
+  // Objective berulang tetap aktif; setiap run adalah project tersendiri (DESIGN.md §24).
+  const [recurring] = await tx.select({ id: schedules.id }).from(schedules).where(and(eq(schedules.objectiveId, task.objectiveId), eq(schedules.enabled, true)));
+  if (objective && open.length === 0 && objective.status === 'active' && !recurring) {
     Objective.assert('active', outcome);
     await tx.update(objectives).set({ status: outcome, updatedAt: new Date() }).where(eq(objectives.id, objective.id));
     emit({ type: `objective.${outcome}`, entityType: 'objective', entityId: objective.id, objectiveId: objective.id, actor: 'orchestrator' });
