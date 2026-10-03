@@ -31,5 +31,5 @@ export function createContext(config: Config, db: Db): OfficeContext {
   const bus = new EventEmitter();
   bus.setMaxListeners(100);
   const secrets = SecretBox.load(config.secretKey, config.secretFile);
-  return { db, bus, workspacesDir: config.workspacesDir, defaultModel: config.defaultModel, runtimes, limits, forceRuntime, secrets, appOrigin: config.appOrigin };
+  return { db, bus, workspacesDir: config.workspacesDir, defaultModel: config.defaultModel, runtimes, limits, forceRuntime, secrets, appOrigin: config.appOrigin, uiOrigin: config.uiOrigin };
 }

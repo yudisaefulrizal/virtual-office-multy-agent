@@ -39,6 +39,8 @@ export interface OfficeContext {
   secrets: SecretBox;
   /** Alamat publik aplikasi (untuk redirect login Instagram). */
   appOrigin?: string;
+  /** Alamat dashboard untuk Owner (lokal). Callback Instagram mengarahkan kembali ke sini. */
+  uiOrigin?: string;
   /** Tool Gateway (MCP). Dipasang setelah server HTTP diketahui alamatnya. */
   gateway?: Gateway;
 }

@@ -43,6 +43,18 @@ const IdParams = z.object({ id: z.uuid() });
 export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string) {
   const app = Fastify({ logger: { level: 'warn' } });
 
+  // Dashboard tidak punya login: hanya boleh dibuka dari komputer ini. Lewat tunnel/proxy publik hanya
+  // callback Instagram yang dilayani; yang lain 404. Permintaan dianggap dari luar bila Host bukan loopback
+  // ATAU ada header proxy (tunnel biasa menambahkannya walau Host ditulis ulang ke localhost).
+  app.addHook('onRequest', async (req, reply) => {
+    const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+    const proxied = ['cf-connecting-ip', 'x-forwarded-for', 'x-forwarded-host', 'forwarded', 'x-real-ip'].some((h) => req.headers[h] !== undefined);
+    const local = ['localhost', '127.0.0.1', '::1'].includes(host) && !proxied;
+    if (local) return;
+    if (req.method === 'GET' && req.url.split('?')[0] === '/auth/instagram/callback') return;
+    return reply.status(404).send({ error: 'Tidak ditemukan' });
+  });
+
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof z.ZodError) return reply.status(400).send({ error: 'Input tidak valid', issues: err.issues });
     if (err instanceof UserError) return reply.status(400).send({ error: err.message });
@@ -191,7 +203,8 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     } catch (err) {
       app.log.error(err);
     }
-    return reply.redirect(`/#/access?instagram=${result}`);
+    // Browser Owner tiba lewat alamat publik; kembalikan ke dashboard lokal yang hanya bisa dibuka dari komputer ini.
+    return reply.redirect(`${ctx.uiOrigin ?? ''}/#/access?instagram=${result}`);
   });
 
   app.get('/api/tools', () => listTools(ctx));
