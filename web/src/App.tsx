@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, useLive } from './api';
 import { DecisionPage, DecisionsPage } from './pages/DecisionPage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { ObjectivePage } from './pages/ObjectivePage';
 import { ObjectivesPage } from './pages/ObjectivesPage';
 import { OfficePage } from './pages/OfficePage';
@@ -67,7 +68,9 @@ export function App() {
       ? 'decisions'
       : route.startsWith('/settings')
         ? 'settings'
-        : 'office';
+        : route.startsWith('/knowledge')
+          ? 'knowledge'
+          : 'office';
 
   return (
     <>
@@ -93,6 +96,9 @@ export function App() {
             <a href="#/decisions" aria-current={section === 'decisions' ? 'page' : undefined} className="row" style={{ gap: 8 }}>
               Keputusan <PendingBadge />
             </a>
+            <a href="#/knowledge" aria-current={section === 'knowledge' ? 'page' : undefined}>
+              Knowledge
+            </a>
             <a href="#/settings" aria-current={section === 'settings' ? 'page' : undefined}>
               Pengaturan
             </a>
@@ -110,6 +116,8 @@ export function App() {
         <ObjectivesPage />
       ) : section === 'settings' ? (
         <SettingsPage />
+      ) : section === 'knowledge' ? (
+        <KnowledgePage />
       ) : (
         <OfficePage />
       )}

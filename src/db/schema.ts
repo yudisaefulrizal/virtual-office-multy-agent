@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  uniqueIndex,
   datetime,
   index,
   int,
@@ -181,3 +182,27 @@ export const settings = mysqlTable('settings', {
   value: json('value').notNull(),
   updatedAt: ts('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
 });
+
+/**
+ * Knowledge organisasi (DESIGN.md §10). confidence & recheck_after dihitung
+ * deterministik dari sumber dan kategori, bukan dari klaim model (A8).
+ */
+export const knowledge = mysqlTable(
+  'knowledge',
+  {
+    id: id().primaryKey(),
+    topic: varchar('topic', { length: 255 }).notNull(),
+    topicKey: varchar('topic_key', { length: 255 }).notNull(),
+    category: varchar('category', { length: 32 }).notNull(),
+    content: text('content').notNull(),
+    sources: json('sources').notNull().default(sql`(JSON_ARRAY())`),
+    confidence: varchar('confidence', { length: 16 }).notNull(), // low | medium | high
+    researchedAt: ts('researched_at').notNull(),
+    lastVerifiedAt: ts('last_verified_at').notNull(),
+    recheckAfter: ts('recheck_after').notNull(),
+    createdByTaskId: id('created_by_task_id'),
+    objectiveId: id('objective_id'),
+    updatedAt: ts('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+  },
+  (t) => [uniqueIndex('knowledge_topic_key_idx').on(t.topicKey), index('knowledge_category_idx').on(t.category)],
+);

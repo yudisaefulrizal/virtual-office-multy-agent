@@ -14,6 +14,7 @@ import type { Tx } from '../db/client';
 import { agents, decisions, objectives, projects, roles, taskDependencies, tasks } from '../db/schema';
 import { Objective, Project, type Actor, type ObjectiveStatus, type ProjectStatus, type TaskKind, type TaskStatus } from '../domain';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
+import { type KnowledgeInput, upsertKnowledge } from './knowledge';
 import { onDecisionCompleted, onFramingCompleted, onStrategicTaskFinished, startStrategicLoop } from './strategy';
 
 type TaskRow = typeof tasks.$inferSelect;
@@ -224,7 +225,12 @@ export async function onTaskCompleted(ctx: OfficeContext, tx: Tx, emit: Emit, ta
   if (task.projectId) {
     if (task.kind === 'planning') await materializePlan(tx, emit, task, result as Plan);
     if (task.kind === 'review') await handleReview(tx, emit, task, result as Review);
-  } else {
+  }
+  if (task.kind === 'research') {
+    const items = (result as { knowledge?: KnowledgeInput[] }).knowledge ?? [];
+    await upsertKnowledge(tx, emit, items, { taskId: task.id, objectiveId: task.objectiveId, actor: `agent:${task.assignedAgentId}` });
+  }
+  if (!task.projectId) {
     if (task.kind === 'framing') await onFramingCompleted(tx, emit, task, result as Framing);
     if (task.kind === 'decision') await onDecisionCompleted(ctx, tx, emit, task, result as DecisionProposal);
   }

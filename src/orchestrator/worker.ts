@@ -9,6 +9,7 @@ import { Task, type TaskStatus } from '../domain';
 import type { AgentRuntime, NativeToolPolicy, RunRequest, RunResult, RuntimeId } from '../runtimes/runtime';
 import { rowsOf, type Tx } from '../db/client';
 import { type Emit, type OfficeContext, withTx } from './context';
+import { knowledgePromptSection, searchKnowledge } from './knowledge';
 import { onTaskAborted, onTaskCompleted } from './office';
 import { scanOutDir } from './artifacts';
 
@@ -229,7 +230,10 @@ export class Worker {
       const workDir = path.join(this.ctx.workspacesDir, agent.workspacePath, 'tasks', task.id);
       await mkdir(path.join(workDir, 'out'), { recursive: true });
       const dependencies = await this.prepareContext(task.id, workDir);
-      const { systemPrompt, prompt } = buildPrompts({ agent, role, task, objective, dependencies });
+      // Review menilai hasil kerja, bukan fakta baru; knowledge tidak perlu disertakan.
+      const relevant = task.kind === 'review' ? [] : await searchKnowledge(this.ctx.db, `${objective.title} ${task.title} ${task.instructions}`);
+      const knowledge = knowledgePromptSection(relevant, task.kind === 'research');
+      const { systemPrompt, prompt } = buildPrompts({ agent, role, task, objective, dependencies, knowledge });
       const base = {
         workDir,
         systemPrompt,

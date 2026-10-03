@@ -91,7 +91,14 @@ async function defaultHandler(req: RunRequest): Promise<Partial<RunResult>> {
   await writeFile(path.join(out, file), `# Hasil (fake runtime)\n\n${req.prompt.slice(0, 400)}\n`);
   const artifacts = [{ path: `out/${file}`, description: 'Hasil task' }];
   if (props.includes('findings')) {
-    return { output: { summary: 'Riset dibuat oleh fake runtime.', findings: [{ point: 'Contoh temuan', source: 'tidak terverifikasi' }], artifacts } };
+    return {
+      output: {
+        summary: 'Riset dibuat oleh fake runtime.',
+        findings: [{ point: 'Contoh temuan', source: 'tidak terverifikasi' }],
+        artifacts,
+        knowledge: [{ topic: 'Contoh knowledge riset', category: 'content', content: 'Carousel edukatif cocok untuk konten harian.', sources: ['https://example.com/a'] }],
+      },
+    };
   }
   return { output: { summary: 'Hasil dibuat oleh fake runtime.', artifacts } };
 }

@@ -6,8 +6,9 @@ import { eq } from 'drizzle-orm';
 import Fastify from 'fastify';
 import { UserError } from '../../domain';
 import { z } from 'zod';
-import { agentSessions, agents, artifacts, roles } from '../../db/schema';
+import { agentSessions, agents, artifacts, knowledge, roles } from '../../db/schema';
 import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator/context';
+import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { createObjective } from '../../orchestrator/office';
 import { PROVIDER_IDS, listProviders, setProvider, updateAgent } from '../../orchestrator/providers';
 import { decisionDetail, listDecisions, listObjectives, objectiveTrace, officeView } from '../../orchestrator/queries';
@@ -96,6 +97,21 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
   app.post('/api/decisions/:id/reject', async (req) => {
     const { id } = IdParams.parse(req.params);
     await rejectDecision(ctx, id, NoteBody.parse(req.body ?? {}).note);
+    return { ok: true };
+  });
+
+  app.get('/api/knowledge', async (req) => {
+    const q = z.object({ q: z.string().max(200).optional(), category: z.enum(KNOWLEDGE_CATEGORIES).optional() }).parse(req.query);
+    const rows = await listKnowledge(ctx.db, q);
+    const now = new Date();
+    return rows.map((r) => ({ ...r, stale: isStale(r, now) }));
+  });
+  app.delete('/api/knowledge/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await withTx(ctx, async (tx, emit) => {
+      await tx.delete(knowledge).where(eq(knowledge.id, id));
+      emit({ type: 'knowledge.deleted', entityType: 'knowledge', entityId: id, actor: 'owner' });
+    });
     return { ok: true };
   });
 

@@ -36,6 +36,13 @@
       "when": 1790986761232,
       "tag": "0004_decision_task",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1790987189214,
+      "tag": "0005_knowledge",
+      "breakpoints": true
     }
   ]
 }

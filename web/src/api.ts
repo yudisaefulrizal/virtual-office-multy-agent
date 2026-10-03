@@ -160,6 +160,20 @@ export interface AgentRow {
 
 export type ObjectiveMode = 'strategic' | 'planned' | 'direct';
 
+export interface KnowledgeItem {
+  id: string;
+  topic: string;
+  category: string;
+  content: string;
+  sources: string[];
+  confidence: 'low' | 'medium' | 'high';
+  researchedAt: string;
+  lastVerifiedAt: string;
+  recheckAfter: string;
+  objectiveId: string | null;
+  stale: boolean;
+}
+
 export interface Settings {
   decision_approval: 'always' | 'auto';
   usd_to_idr: number;
@@ -225,6 +239,9 @@ export const api = {
   decision: (id: string) => request<DecisionDetail>(`/api/decisions/${id}`),
   decide: (id: string, action: 'approve' | 'revise' | 'reject', note?: string) =>
     request<{ ok: boolean }>(`/api/decisions/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) }),
+  knowledge: (q: string, category: string) =>
+    request<KnowledgeItem[]>(`/api/knowledge?${new URLSearchParams({ ...(q ? { q } : {}), ...(category ? { category } : {}) })}`),
+  deleteKnowledge: (id: string) => request<{ ok: boolean }>(`/api/knowledge/${id}`, { method: 'DELETE' }),
   settings: () => request<Settings>('/api/settings'),
   updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>

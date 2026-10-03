@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { TaskKind } from '../domain';
 import type { Capability } from '../runtimes/runtime';
+import { KNOWLEDGE_CATEGORIES } from '../orchestrator/knowledge';
 import { CONSULTABLE_ROLES, PLANNABLE_ROLES, ROLES } from './roles';
 
 const ArtifactRef = z.strictObject({
@@ -27,6 +28,16 @@ export const ResearchOutput = z.strictObject({
     )
     .min(1),
   artifacts: z.array(ArtifactRef).describe('Catatan riset yang ditulis ke folder out/'),
+  knowledge: z
+    .array(
+      z.strictObject({
+        topic: z.string().min(3).max(200).describe('Topik singkat yang bisa dicari ulang, mis. "Instagram Graph API: publish konten"'),
+        category: z.enum(KNOWLEDGE_CATEGORIES),
+        content: z.string().min(10).describe('Fakta yang layak disimpan dan dipakai ulang'),
+        sources: z.array(z.string()).describe('URL sumber'),
+      }),
+    )
+    .describe('Fakta yang layak disimpan sebagai knowledge organisasi; kosongkan bila tidak ada'),
   assumptions: z.array(z.string()).optional(),
 });
 

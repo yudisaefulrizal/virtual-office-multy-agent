@@ -13,13 +13,15 @@ interface PromptInput {
   task: { title: string; instructions: string; input: unknown };
   objective: { title: string; description: string };
   dependencies?: DependencyContext[];
+  /** Bagian prompt berisi knowledge organisasi yang relevan (sudah diformat). */
+  knowledge?: string;
 }
 
 /**
  * Konteks dibuat ramping: setiap task memulai sesi baru hanya dengan
  * informasi yang relevan, karena panjang konteks memakan kuota (DESIGN.md §6.2).
  */
-export function buildPrompts({ agent, role, task, objective, dependencies = [] }: PromptInput) {
+export function buildPrompts({ agent, role, task, objective, dependencies = [], knowledge = '' }: PromptInput) {
   const systemPrompt = [
     `Kamu adalah ${agent.name} (${role.name}) di Virtual Office, sebuah organisasi AI.`,
     role.instructions,
@@ -58,7 +60,7 @@ export function buildPrompts({ agent, role, task, objective, dependencies = [] }
     '',
     `${objective.title}`,
     objective.description && objective.description !== objective.title ? `\n${objective.description}` : '',
-  ].join('\n') + deps + input;
+  ].join('\n') + deps + knowledge + input;
 
   return { systemPrompt, prompt };
 }
