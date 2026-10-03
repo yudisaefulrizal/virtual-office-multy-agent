@@ -1,6 +1,8 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { api, useLive, useNow, type OfficeAgent } from '../api';
 import { ACTIVITY, TASK_STATUS, dateTime, duration, eventText, time } from '../format';
+import type { BehaviorEngine } from '../office/behavior';
+import { buildBuilding } from '../office/layout';
 import { lookFor } from '../office/look';
 import { Inbox } from './Inbox';
 import { NewObjective } from './NewObjective';
@@ -10,6 +12,16 @@ const OfficeScene = lazy(() => import('../office/Scene').then((m) => ({ default:
 export function OfficePage() {
   const { data, error, refresh } = useLive(api.office);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [floorIndex, setFloorIndex] = useState(0);
+  const engineRef = useRef<BehaviorEngine | null>(null);
+
+  // Tata letak hanya dihitung ulang saat susunan divisi/staf berubah, bukan tiap status berubah.
+  const layoutKey = data ? JSON.stringify([data.departments, data.agents.map((a) => [a.id, a.department, a.roleId, a.isHead])]) : '';
+  const building = useMemo(
+    () => (data ? buildBuilding(data.departments, data.agents) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layoutKey],
+  );
 
   const selected = useMemo(() => {
     if (!data) return null;
@@ -22,7 +34,10 @@ export function OfficePage() {
   }, [data, selectedId]);
 
   if (error && !data) return <main className="page"><p className="error">Tidak bisa memuat kantor: {error}</p></main>;
-  if (!data) return <main className="page"><p className="muted">Memuat kantor…</p></main>;
+  if (!data || !building) return <main className="page"><p className="muted">Memuat kantor…</p></main>;
+
+  const floor = building.floors[Math.min(floorIndex, building.floors.length - 1)]!;
+  const deptColors = new Map(data.departments.map((d) => [d.id, d.color]));
 
   const working = data.agents.filter((a) => a.activity === 'working').length;
 
@@ -51,9 +66,37 @@ export function OfficePage() {
               ))}
             </div>
           </div>
+          {building.floors.length > 1 && (
+            <div role="tablist" aria-label="Lantai" className="row" style={{ padding: '8px 20px', gap: 6, borderBottom: '1px solid var(--scene-line)' }}>
+              {building.floors.map((f) => (
+                <button
+                  key={f.index}
+                  type="button"
+                  role="tab"
+                  aria-selected={f.index === floor.index}
+                  className="rt-chip"
+                  style={{ cursor: 'pointer', color: '#fff', borderColor: f.index === floor.index ? '#6f8fff' : undefined }}
+                  onClick={() => setFloorIndex(f.index)}
+                >
+                  Lantai {f.index + 1}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="scene-canvas">
             <Suspense fallback={<p style={{ padding: 20 }}>Menyiapkan kantor 3D…</p>}>
-              <OfficeScene agents={data.agents} runtimes={data.runtimes} events={data.events} meeting={data.meeting} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
+              <OfficeScene
+                key={floor.index}
+                floor={floor}
+                agents={data.agents}
+                runtimes={data.runtimes}
+                events={data.events}
+                meeting={data.meeting}
+                deptColors={deptColors}
+                selectedId={selected?.id ?? null}
+                onSelect={setSelectedId}
+                engineRef={engineRef}
+              />
             </Suspense>
           </div>
           <div className="scene-foot">
@@ -70,7 +113,7 @@ export function OfficePage() {
       </section>
 
       <aside className="side">
-        {selected && <AgentDetail agent={selected} />}
+        {selected && <AgentDetail agent={selected} engineRef={engineRef} departmentName={data.departments.find((d) => d.id === selected.department)?.name} />}
         <Inbox items={data.inbox} onChanged={refresh} />
         <NewObjective />
         <section className="card" aria-labelledby="feed">
@@ -92,8 +135,10 @@ export function OfficePage() {
   );
 }
 
-function AgentDetail({ agent }: { agent: OfficeAgent }) {
+function AgentDetail({ agent, engineRef, departmentName }: { agent: OfficeAgent; engineRef: React.MutableRefObject<BehaviorEngine | null>; departmentName?: string }) {
   const now = useNow();
+  // useNow memicu render ulang tiap detik, jadi kegiatan terkini dari mesin perilaku ikut diperbarui.
+  const doing = engineRef.current?.get(agent.id)?.label;
   const look = lookFor(agent.id, agent.department);
   const st = ACTIVITY[agent.activity];
   const [stopping, setStopping] = useState(false);
@@ -118,7 +163,7 @@ function AgentDetail({ agent }: { agent: OfficeAgent }) {
         </div>
         <div style={{ minWidth: 0 }}>
           <h2 id="agent-name" style={{ fontSize: 18 }}>{agent.name}</h2>
-          <div className="small muted">{agent.roleName}</div>
+          <div className="small muted">{agent.roleName}{departmentName ? ` · ${departmentName}` : ''}{agent.isHead ? ' · Kepala divisi' : ''}</div>
           <div className="row small" style={{ marginTop: 4, gap: 6 }}>
             <span className={`dot ${st.dot}`} />
             <strong style={{ color: st.tone }}>{st.label}</strong>
@@ -128,8 +173,14 @@ function AgentDetail({ agent }: { agent: OfficeAgent }) {
       <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', fontSize: 13 }}>
         <dt className="muted">Runtime</dt>
         <dd className="mono small" style={{ margin: 0 }}>{agent.runtime}{agent.model ? ` · ${agent.model}` : ''}</dd>
-        <dt className="muted">Aktivitas</dt>
+        <dt className="muted">Pekerjaan</dt>
         <dd style={{ margin: 0 }}>{agent.line}</dd>
+        {doing && (
+          <>
+            <dt className="muted">Sedang</dt>
+            <dd style={{ margin: 0 }}>{doing}</dd>
+          </>
+        )}
         <dt className="muted">Workspace</dt>
         <dd className="mono small" style={{ margin: 0, overflowWrap: 'anywhere' }}>{agent.workspacePath}</dd>
       </dl>

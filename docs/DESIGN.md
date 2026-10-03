@@ -760,3 +760,20 @@ Masih menunggu konfirmasi:
 
 1. **Decision CEO butuh approval Owner** secara default (A5). Ini juga titik di mana Owner menjawab `owner_requests`.
 2. **Single-organization** di MVP (A11).
+
+
+---
+
+## 14. Organisasi dinamis, paralel, dan kantor modular (2026-10-03)
+
+Keputusan Owner: bagian yang banyak pekerjaan punya staf sendiri; HRD bisa membuat ruangan (divisi) baru; kantor punya ruang rapat dan pantry; avatar punya aktivitas acak saat menganggur.
+
+**Paralel sesuai kebutuhan.** Yang dibandingkan adalah *biaya akhir untuk pekerjaan yang sama*, bukan jumlah agent. Task yang memang independen dijalankan bersamaan (total token sama, hasil lebih cepat). Memecah satu pekerjaan ke lebih banyak agent hanya demi paralel menambah biaya dasar per sesi (±20–30 ribu token input), jadi tidak dilakukan: Manager tetap menyusun 1–4 task.
+- **Satu karyawan, satu task.** Agent dipilih saat task diambil (staf role yang sedang menganggur), sehingga jumlah staf = kapasitas paralel sebenarnya.
+- **Batas paralel adaptif** per runtime: turun separuh saat rate limit, naik satu per run berhasil, sampai batas konfigurasi.
+
+**Aturan HRD menambah staf** (deterministik, `orchestrator/staffing.ts`): ada task siap kerja menunggu lebih lama dari ambang, semua staf role itu sibuk, runtime-nya punya slot dan tidak sedang cooldown/kuota habis. Slot penuh → tidak merekrut (tidak mempercepat apa pun), hanya dicatat. Di bawah batas staf per role → rekrut otomatis; di atas batas atau mode "ask" → persetujuan Owner. Jeda 10 menit antar rekrutan per role.
+
+**Divisi dan role dinamis.** Tabel `departments`; `roles` punya `plannable/task_kind/description` sehingga Manager melihat daftar role dari database. Role/divisi baru lewat tool `propose_org_change` (khusus HRD, risiko tinggi → persetujuan Owner) atau langsung oleh Owner. Role baru hanya mendapat tool risiko rendah (A6).
+
+**Kantor modular** (`web/src/office/`): `layout.ts` menyusun gedung dari divisi (ukuran ruangan mengikuti jumlah staf, dua baris ruangan + koridor, pintu ke koridor, maksimal 6 divisi per lantai); `pathfinding.ts` A* di grid 0,5 ubin; `behavior.ts` mesin perilaku avatar (murni kosmetik di browser, tanpa kuota). Prioritas perilaku mengikuti kondisi nyata: rapat > serah-terima hasil > bekerja di meja > aktivitas acak (hanya saat benar-benar menganggur). Pantry dan tempatnya (mesin kopi, sofa, jendela) dipakai satu orang per tempat.

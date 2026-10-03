@@ -267,6 +267,8 @@ describe('Organisasi dinamis: divisi dan role baru lewat usulan HRD', () => {
     const content = view.agents.filter((a) => a.department === 'content');
     expect(content.map((a) => [a.name, a.isHead])).toEqual(expect.arrayContaining([['Content Writer', true], ['Content Writer 2', false]]));
     expect(view.agents.find((a) => a.roleId === 'ceo')!.isHead).toBe(true);
+    // Market Researcher menunggu provider: yang memimpin R&D adalah Research Agent yang aktif.
+    expect(view.agents.filter((a) => a.department === 'rnd').map((a) => [a.name, a.isHead])).toEqual(expect.arrayContaining([['Research Agent', true], ['Market Researcher', false]]));
     void events;
   });
 });

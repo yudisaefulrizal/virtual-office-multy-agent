@@ -98,11 +98,11 @@ export async function officeView(
     };
   });
 
-  // Kepala divisi = karyawan aktif tertua di divisinya.
+  // Kepala divisi = karyawan aktif tertua di divisinya (yang menunggu provider belum bisa memimpin).
   const headOf = new Map<string, string>();
-  for (const a of [...agentsOut].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())) {
-    if (a.status !== 'inactive' && !headOf.has(a.department)) headOf.set(a.department, a.id);
-  }
+  const byAge = [...agentsOut].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime());
+  for (const a of byAge) if (a.status === 'active' && !headOf.has(a.department)) headOf.set(a.department, a.id);
+  for (const a of byAge) if (a.status !== 'inactive' && !headOf.has(a.department)) headOf.set(a.department, a.id);
   const agentsView = agentsOut.map(({ createdAt: _c, ...a }) => ({ ...a, isHead: headOf.get(a.department) === a.id }));
   const departmentRows = await db.select().from(departments).orderBy(asc(departments.sortOrder), asc(departments.id));
 

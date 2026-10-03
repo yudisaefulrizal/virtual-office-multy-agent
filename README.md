@@ -6,7 +6,10 @@ Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasi
 
 | Bagian | Isi |
 |---|---|
-| Kantor 3D | Avatar voxel per karyawan, status live, rapat strategi, avatar berjalan ke Manager saat menyerahkan hasil |
+| Kantor 3D | Gedung modular: tiap divisi punya ruangan sendiri, plus Ruang Rapat, Pantry, dan Ruang Runtime. Divisi baru = ruangan baru; lebih dari 6 divisi → lantai baru |
+| Avatar | Duduk di meja, berjalan lewat pintu dan koridor, rapat strategi di Ruang Rapat, menyerahkan hasil ke Manager. Saat menganggur: duduk santai, meregang, menyeduh kopi, ngobrol di pantry, sofa, melihat keluar jendela |
+| Organisasi | Divisi, role, dan staf dinamis. HRD mengusulkan divisi/role/staf baru (disetujui Owner); aturan staffing deterministik menambah staf saat antrean menumpuk |
+| Paralel | Satu karyawan satu task; staf role yang sama bekerja bersamaan. Batas paralel runtime turun sendiri saat rate limit dan naik lagi saat aman |
 | Strategi (Slice 3) | CEO → konsultasi selektif (R&D, CFO, CTO, HRD) → usulan keputusan → persetujuan Owner → Manager |
 | Eksekusi (Slice 2) | Manager merencanakan task + dependency, tim mengerjakan, Manager mereview (maks. 2 revisi) |
 | Runtime | Claude CLI (utama, login langganan) dan OpenRouter (role yang cukup bernalar, hemat kuota) |
@@ -63,6 +66,10 @@ VO_FORCE_RUNTIME=fake npm start
 ```
 
 Semua agent memakai runtime palsu yang menulis `out/result.md`. Cocok untuk mencoba UI dan alur.
+
+### Paralel dan staf
+
+`CLAUDE_CLI_CONCURRENCY` (default 3) adalah batas sesi Claude bersamaan. Karena kuota Pro dihitung bersama, paralel membuat pekerjaan **selesai lebih cepat**, bukan menambah jumlah pekerjaan per jendela kuota. Pengaman `CLAUDE_CLI_MAX_RUNS_PER_WINDOW` tetap berlaku. HRD menambah staf hanya bila task siap kerja menunggu lama, semua staf role itu sibuk, dan runtime-nya masih punya slot (aturannya di Pengaturan > Organisasi).
 
 Setelah memperbarui kode, restart server (`npm start`): migrasi database berjalan otomatis saat start.
 
