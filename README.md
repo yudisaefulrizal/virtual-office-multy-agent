@@ -2,7 +2,14 @@
 
 Organisasi AI multi-agent dengan kantor 3D yang bisa dipantau. Virtual Office adalah orchestrator; Claude Code (`claude -p`) adalah runtime yang mengerjakan task. Desain lengkap: [docs/DESIGN.md](docs/DESIGN.md).
 
-Status: **Slice 1** — Owner memberi objective → Content Writer mengerjakannya lewat Claude CLI → hasil, sesi, token, artifact, dan event tercatat dan tampil di kantor 3D.
+Status: **Slice 2** — Owner memberi objective → Manager menyusun rencana (task + dependency) → Research Agent dan Content Writer mengerjakan lewat Claude CLI, hasil diteruskan antar task → Manager mereview (maks. 2 revisi, lalu diserahkan ke Owner). Semua sesi, token, artifact, dan event tercatat dan tampil di kantor 3D.
+
+Dua cara kerja saat memberi objective:
+
+| Mode | Alur | Kuota Claude |
+|---|---|---|
+| Terencana (default) | Rencana → riset/tulis → review | ±4 run |
+| Cepat | Langsung ke Content Writer | 1 run |
 
 ## Menjalankan
 

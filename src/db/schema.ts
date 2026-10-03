@@ -81,6 +81,8 @@ export const tasks = mysqlTable(
     objectiveId: id('objective_id').notNull().references(() => objectives.id),
     projectId: id('project_id').references(() => projects.id),
     kind: varchar('kind', { length: 32 }).notNull(),
+    /** Key task di rencana Manager; revisi memakai key yang sama. */
+    planKey: varchar('plan_key', { length: 64 }),
     title: varchar('title', { length: 255 }).notNull(),
     instructions: text('instructions').notNull(),
     input: json('input').notNull().default(emptyJson),

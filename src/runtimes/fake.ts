@@ -10,7 +10,8 @@ export type FakeHandler = (req: RunRequest, call: number) => Promise<Partial<Run
  */
 export class FakeRuntime implements AgentRuntime {
   readonly id = 'fake' as const;
-  readonly capabilities: ReadonlySet<Capability> = new Set(['structured_output', 'workspace_files', 'resume']);
+  // Mensimulasikan semua kemampuan claude-cli, termasuk riset web.
+  readonly capabilities: ReadonlySet<Capability> = new Set(['structured_output', 'workspace_files', 'web_research', 'resume']);
   calls: RunRequest[] = [];
 
   constructor(
@@ -40,14 +41,31 @@ export class FakeRuntime implements AgentRuntime {
   }
 }
 
+/** Bentuk output ditebak dari JSON schema yang diminta (planning, review, research, work). */
 async function defaultHandler(req: RunRequest): Promise<Partial<RunResult>> {
+  const props = Object.keys((req.outputSchema as { properties?: object }).properties ?? {});
+  if (props.includes('tasks')) {
+    return {
+      output: {
+        summary: 'Riset singkat lalu tulis konten.',
+        tasks: [
+          { key: 'riset', title: 'Riset tren', role: 'researcher', instructions: 'Kumpulkan tren dan sumbernya.', depends_on: [] },
+          { key: 'konten', title: 'Tulis konten', role: 'content_writer', instructions: 'Tulis konten berdasarkan riset.', depends_on: ['riset'] },
+        ],
+        review_focus: 'Sesuai objective dan memakai hasil riset.',
+      },
+    };
+  }
+  if (props.includes('verdict')) {
+    return { output: { verdict: 'accept', feedback: 'Hasil sesuai objective.', revisions: [] } };
+  }
   const out = path.join(req.workDir, 'out');
   await mkdir(out, { recursive: true });
-  await writeFile(path.join(out, 'result.md'), `# Hasil (fake runtime)\n\n${req.prompt.slice(0, 400)}\n`);
-  return {
-    output: {
-      summary: 'Hasil dibuat oleh fake runtime.',
-      artifacts: [{ path: 'out/result.md', description: 'Hasil task' }],
-    },
-  };
+  const file = props.includes('findings') ? 'riset.md' : 'result.md';
+  await writeFile(path.join(out, file), `# Hasil (fake runtime)\n\n${req.prompt.slice(0, 400)}\n`);
+  const artifacts = [{ path: `out/${file}`, description: 'Hasil task' }];
+  if (props.includes('findings')) {
+    return { output: { summary: 'Riset dibuat oleh fake runtime.', findings: [{ point: 'Contoh temuan', source: 'tidak terverifikasi' }], artifacts } };
+  }
+  return { output: { summary: 'Hasil dibuat oleh fake runtime.', artifacts } };
 }

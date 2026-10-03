@@ -1,13 +1,20 @@
 import { OrbitControls } from '@react-three/drei';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useMemo, useRef, type ReactNode, type RefObject } from 'react';
-import { Vector3, type Group } from 'three';
-import type { OfficeAgent, RuntimeInfo } from '../api';
+import { Vector3, type Group, type Object3D } from 'three';
+import type { OfficeAgent, OfficeEvent, RuntimeInfo } from '../api';
 import { ACTIVITY } from '../format';
 import { FLOOR, ROOMS, SERVER_ROOM, placeAgents, type Placement } from './layout';
 import { lookFor, type Look } from './look';
 
 const ACCENT = '#6f8fff';
+/** Lama animasi menyerahkan hasil ke Manager (pergi, berhenti, kembali). */
+const WALK_MS = 7000;
+
+interface Walk {
+  start: number;
+  to: [number, number];
+}
 
 interface BlockProps {
   /** Pojok minimum (x, y, z) dan ukuran (w, h, d). */
@@ -136,17 +143,59 @@ function Avatar({ look, working, ghost, selected }: { look: Look; working: boole
   );
 }
 
-function Person({ p, selected, onSelect }: { p: Placement; selected: boolean; onSelect: (id: string) => void }) {
+function Person({
+  p,
+  selected,
+  onSelect,
+  walk,
+  register,
+}: {
+  p: Placement;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  walk: Walk | null;
+  register: (id: string, obj: Object3D | null) => void;
+}) {
   const { agent } = p;
   const look = useMemo(() => lookFor(agent.id, agent.department), [agent.id, agent.department]);
+  const group = useRef<Group>(null);
+  const paper = useRef<Group>(null);
+
+  useFrame(() => {
+    const g = group.current;
+    if (!g) return;
+    const t = walk ? (Date.now() - walk.start) / WALK_MS : 1;
+    if (!walk || t < 0 || t >= 1) {
+      g.position.set(p.x, 0.04, p.z);
+      g.rotation.y = 0;
+      if (paper.current) paper.current.visible = false;
+      return;
+    }
+    // 0–0.4 berjalan ke Manager, 0.4–0.6 menyerahkan, 0.6–1 kembali.
+    const [tx, tz] = walk.to;
+    const k = t < 0.4 ? t / 0.4 : t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+    const ease = k * k * (3 - 2 * k);
+    g.position.set(p.x + (tx - p.x) * ease, 0.04 + (t < 0.4 || t > 0.6 ? Math.abs(Math.sin(t * 60)) * 0.05 : 0), p.z + (tz - p.z) * ease);
+    const dir = t < 0.4 ? 1 : -1;
+    g.rotation.y = t >= 0.4 && t <= 0.6 ? Math.PI : Math.atan2((tx - p.x) * dir, (tz - p.z) * dir);
+    if (paper.current) paper.current.visible = t < 0.55;
+  });
+
   return (
     <group
+      ref={(g) => {
+        group.current = g;
+        register(agent.id, g);
+      }}
       position={[p.x, 0.04, p.z]}
       onClick={(e) => (e.stopPropagation(), onSelect(agent.id))}
       onPointerOver={() => (document.body.style.cursor = 'pointer')}
       onPointerOut={() => (document.body.style.cursor = '')}
     >
       <Avatar look={look} working={agent.activity === 'working'} ghost={agent.activity === 'inactive'} selected={selected} />
+      <group ref={paper} visible={false}>
+        <Block at={[-0.14, 0.62, 0.2]} size={[0.28, 0.36, 0.03]} color="#f7f6f0" />
+      </group>
     </group>
   );
 }
@@ -178,18 +227,31 @@ function Racks({ runtimes }: { runtimes: RuntimeInfo[] }) {
 interface Label {
   key: string;
   at: [number, number, number];
+  /** Ikuti objek 3D yang bergerak (avatar berjalan); `at[1]` menjadi tinggi di atasnya. */
+  follow?: string;
   /** Diletakkan di atas titik (tag) atau di tengahnya (papan nama ruangan). */
   anchor: 'above' | 'center';
   node: ReactNode;
 }
 
-function LabelProjector({ labels, refs }: { labels: Label[]; refs: RefObject<Map<string, HTMLDivElement>> }) {
+function LabelProjector({
+  labels,
+  refs,
+  objects,
+}: {
+  labels: Label[];
+  refs: RefObject<Map<string, HTMLDivElement>>;
+  objects: RefObject<Map<string, Object3D>>;
+}) {
   const v = useMemo(() => new Vector3(), []);
   useFrame(({ camera, size }) => {
     for (const l of labels) {
       const el = refs.current.get(l.key);
       if (!el) continue;
-      v.set(...l.at).project(camera);
+      const obj = l.follow ? objects.current.get(l.follow) : undefined;
+      if (obj) v.set(obj.position.x, l.at[1], obj.position.z);
+      else v.set(...l.at);
+      v.project(camera);
       const x = ((v.x + 1) / 2) * size.width;
       const y = ((1 - v.y) / 2) * size.height;
       el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
@@ -204,17 +266,38 @@ function LabelProjector({ labels, refs }: { labels: Label[]; refs: RefObject<Map
 export function OfficeScene({
   agents,
   runtimes,
+  events,
   selectedId,
   onSelect,
 }: {
   agents: OfficeAgent[];
   runtimes: RuntimeInfo[];
+  events: OfficeEvent[];
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
   const placements = useMemo(() => placeAgents(agents), [agents]);
   const target: [number, number, number] = [FLOOR.w / 2, 0, FLOOR.d / 2];
   const labelRefs = useRef(new Map<string, HTMLDivElement>());
+  const people = useRef(new Map<string, Object3D>());
+  const register = (id: string, obj: Object3D | null) => {
+    if (obj) people.current.set(id, obj);
+    else people.current.delete(id);
+  };
+
+  // Agent yang baru menyelesaikan task berjalan ke depan meja Manager untuk menyerahkan hasil.
+  const manager = placements.find((p) => p.agent.roleId === 'manager');
+  const walks = new Map<string, Walk>();
+  if (manager) {
+    const to: [number, number] = [manager.x + 0.5, manager.z + 1.6];
+    for (const e of events) {
+      if (e.type !== 'task.completed' || !e.actor.startsWith('agent:')) continue;
+      const id = e.actor.slice(6);
+      const start = Date.parse(e.createdAt);
+      if (id === manager.agent.id || walks.has(id) || Date.now() - start > WALK_MS) continue;
+      walks.set(id, { start, to });
+    }
+  }
 
   const labels: Label[] = [
     ...[...ROOMS, SERVER_ROOM].map((r): Label => ({
@@ -248,6 +331,7 @@ export function OfficeScene({
       return {
         key: `agent-${agent.id}`,
         at: [x, 1.8, z],
+        follow: agent.id,
         anchor: 'above',
         node: (
           <>
@@ -291,10 +375,10 @@ export function OfficeScene({
           ) : null,
         )}
         {placements.map((p) => (
-          <Person key={p.agent.id} p={p} selected={p.agent.id === selectedId} onSelect={onSelect} />
+          <Person key={p.agent.id} p={p} selected={p.agent.id === selectedId} onSelect={onSelect} walk={walks.get(p.agent.id) ?? null} register={register} />
         ))}
         <Racks runtimes={runtimes} />
-        <LabelProjector labels={labels} refs={labelRefs} />
+        <LabelProjector labels={labels} refs={labelRefs} objects={people} />
       </Canvas>
       <div className="labels-layer">
         {labels.map((l) => (

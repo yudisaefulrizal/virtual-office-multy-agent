@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { and, eq, gt, sql } from 'drizzle-orm';
-import { buildPrompts, repairPrompt } from '../agents/prompt';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { buildPrompts, repairPrompt, type DependencyContext } from '../agents/prompt';
 import { jsonSchemaFor, kindSpec } from '../agents/schemas';
-import { agentSessions, agents, artifacts, objectives, roles, tasks } from '../db/schema';
+import { agentSessions, agents, artifacts, objectives, roles, taskDependencies, tasks } from '../db/schema';
 import { Task, type TaskStatus } from '../domain';
 import type { AgentRuntime, NativeToolPolicy, RunRequest, RunResult, RuntimeId } from '../runtimes/runtime';
 import { rowsOf, type Tx } from '../db/client';
 import { type Emit, type OfficeContext, withTx } from './context';
-import { onTaskFinished } from './office';
+import { onTaskAborted, onTaskCompleted } from './office';
 import { scanOutDir } from './artifacts';
 
 const LEASE_MS = 90_000;
@@ -83,7 +83,7 @@ export class Worker {
       if (!t || !Task.can(t.status as TaskStatus, 'cancelled')) return false;
       await tx.update(tasks).set({ status: 'cancelled', completedAt: new Date() }).where(eq(tasks.id, taskId));
       emit({ type: 'task.cancelled', entityType: 'task', entityId: taskId, objectiveId: t.objectiveId, actor: 'owner' });
-      await onTaskFinished(tx, emit, t);
+      await onTaskAborted(tx, emit, t);
       return true;
     });
   }
@@ -228,7 +228,8 @@ export class Worker {
       const spec = kindSpec(task.kind);
       const workDir = path.join(this.ctx.workspacesDir, agent.workspacePath, 'tasks', task.id);
       await mkdir(path.join(workDir, 'out'), { recursive: true });
-      const { systemPrompt, prompt } = buildPrompts({ agent, role, task, objective });
+      const dependencies = await this.prepareContext(task.id, workDir);
+      const { systemPrompt, prompt } = buildPrompts({ agent, role, task, objective, dependencies });
       const base = {
         workDir,
         systemPrompt,
@@ -238,25 +239,32 @@ export class Worker {
         timeoutMs: task.timeoutMs,
       };
 
-      let { res, sessionId } = await this.session(task, agent, runtime, { ...base, prompt }, 'run', signal);
-      let parsed = res.status === 'ok' ? spec.schema.safeParse(res.output) : undefined;
+      // Schema dulu, lalu validasi semantik (mis. DAG rencana). Keduanya memicu satu kali repair.
+      const validate = (output: unknown): { ok: true; data: unknown } | { ok: false; error: string } => {
+        const p = spec.schema.safeParse(output);
+        if (!p.success) return { ok: false, error: p.error.message };
+        const problem = spec.check?.(p.data, task.input);
+        return problem ? { ok: false, error: problem } : { ok: true, data: p.data };
+      };
 
-      if (parsed && !parsed.success && !signal.aborted) {
-        await this.ctx.db.update(agentSessions).set({ status: 'invalid_output', error: parsed.error.message.slice(0, 2000) }).where(eq(agentSessions.id, sessionId));
+      let { res, sessionId } = await this.session(task, agent, runtime, { ...base, prompt }, 'run', signal);
+      let checked = res.status === 'ok' ? validate(res.output) : undefined;
+
+      if (checked && !checked.ok && !signal.aborted) {
+        await this.ctx.db.update(agentSessions).set({ status: 'invalid_output', error: checked.error.slice(0, 2000) }).where(eq(agentSessions.id, sessionId));
         ({ res, sessionId } = await this.session(
           task, agent, runtime,
-          { ...base, prompt: repairPrompt(parsed.error.message), resumeSessionId: res.externalSessionId },
+          { ...base, prompt: repairPrompt(checked.error), resumeSessionId: res.externalSessionId },
           'repair', signal,
         ));
-        parsed = res.status === 'ok' ? spec.schema.safeParse(res.output) : undefined;
+        checked = res.status === 'ok' ? validate(res.output) : undefined;
       }
 
       if (res.status === 'aborted' || signal.aborted) return await this.cancelled(task);
       if (res.status === 'rate_limited') return await this.deferred(task, runtime.id, res);
-      if (parsed?.success) return await this.completed(task, workDir, parsed.data, res, sessionId);
+      if (checked?.ok) return await this.completed(task, workDir, checked.data, res, sessionId);
 
-      const error =
-        res.status === 'ok' ? `Output tidak valid setelah repair: ${parsed && !parsed.success ? parsed.error.message : ''}` : res.error ?? res.status;
+      const error = res.status === 'ok' ? `Output tidak valid setelah repair: ${checked && !checked.ok ? checked.error : ''}` : res.error ?? res.status;
       await withTx(this.ctx, (tx, emit) => this.failOrRetry(tx, emit, task, error.slice(0, 2000)));
     } finally {
       clearInterval(heartbeat);
@@ -330,8 +338,8 @@ export class Worker {
         await tx.insert(artifacts).values({ id, taskId: task.id, sessionId, ...f });
         emit({ type: 'artifact.created', entityType: 'artifact', entityId: id, objectiveId: task.objectiveId, actor: `agent:${task.assignedAgentId}`, payload: { path: f.path, taskId: task.id } });
       }
-      emit({ type: 'task.completed', entityType: 'task', entityId: task.id, objectiveId: task.objectiveId, actor: `agent:${task.assignedAgentId}`, payload: { artifacts: files.length, durationMs: res.durationMs } });
-      await onTaskFinished(tx, emit, task);
+      emit({ type: 'task.completed', entityType: 'task', entityId: task.id, objectiveId: task.objectiveId, actor: `agent:${task.assignedAgentId}`, payload: { artifacts: files.length, durationMs: res.durationMs, kind: task.kind } });
+      await onTaskCompleted(this.ctx, tx, emit, task, result);
     });
   }
 
@@ -355,8 +363,46 @@ export class Worker {
       Task.assert('running', 'cancelled');
       await tx.update(tasks).set({ status: 'cancelled', leaseUntil: null, completedAt: new Date() }).where(eq(tasks.id, task.id));
       emit({ type: 'task.cancelled', entityType: 'task', entityId: task.id, objectiveId: task.objectiveId, actor: 'owner' });
-      await onTaskFinished(tx, emit, task);
+      await onTaskAborted(tx, emit, task);
     });
+  }
+
+  /**
+   * Salin artifact dari task dependency ke context/<plan key>/ milik task ini.
+   * Perlu karena --restricted membatasi agent ke working directory-nya sendiri.
+   */
+  private async prepareContext(taskId: string, workDir: string): Promise<DependencyContext[]> {
+    const deps = await this.ctx.db
+      .select({ task: tasks, agentName: agents.name })
+      .from(taskDependencies)
+      .innerJoin(tasks, eq(tasks.id, taskDependencies.dependsOn))
+      .leftJoin(agents, eq(agents.id, tasks.assignedAgentId))
+      .where(eq(taskDependencies.taskId, taskId));
+    if (deps.length === 0) return [];
+    const files = await this.ctx.db.select().from(artifacts).where(inArray(artifacts.taskId, deps.map((d) => d.task.id)));
+
+    const out: DependencyContext[] = [];
+    for (const { task: dep, agentName } of deps) {
+      const key = dep.planKey ?? dep.id.slice(0, 8);
+      const copied: string[] = [];
+      for (const f of files.filter((a) => a.taskId === dep.id)) {
+        const marker = `/tasks/${dep.id}/`;
+        const i = f.path.indexOf(marker);
+        if (i === -1) continue;
+        const rel = path.join('context', key, f.path.slice(i + marker.length));
+        await mkdir(path.dirname(path.join(workDir, rel)), { recursive: true });
+        await copyFile(path.join(this.ctx.workspacesDir, f.path), path.join(workDir, rel));
+        copied.push(rel);
+      }
+      out.push({
+        key,
+        title: dep.title,
+        agentName: agentName ?? 'Agent',
+        summary: (dep.result as { summary?: string } | null)?.summary ?? '',
+        files: copied,
+      });
+    }
+    return out;
   }
 
   private async failOrRetry(tx: Tx, emit: Emit, task: TaskRow, error: string) {
@@ -369,7 +415,7 @@ export class Worker {
       Task.assert('running', 'failed');
       await tx.update(tasks).set({ status: 'failed', error, leaseUntil: null, completedAt: new Date() }).where(eq(tasks.id, task.id));
       emit({ type: 'task.failed', entityType: 'task', entityId: task.id, objectiveId: task.objectiveId, actor: 'orchestrator', payload: { attempt: task.attempt, error } });
-      await onTaskFinished(tx, emit, task);
+      await onTaskAborted(tx, emit, task);
     }
   }
 }

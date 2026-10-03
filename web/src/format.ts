@@ -56,6 +56,10 @@ const EVENT_TEXT: Record<string, string> = {
   'session.ended': 'menutup sesi terminal',
   'artifact.created': 'menyimpan artifact',
   'agent.created': 'merekrut agent',
+  'plan.created': 'menyusun rencana kerja',
+  'review.accepted': 'menerima hasil kerja',
+  'review.revision_requested': 'meminta revisi',
+  'review.escalated': 'menyerahkan keputusan ke Owner',
   'runtime.rate_limited': 'runtime kena rate limit',
   'runtime.quota_reached': 'kuota jendela habis',
   'runtime.quota_available': 'kuota tersedia lagi',
@@ -84,3 +88,10 @@ export const tokens = (n: number | null | undefined) =>
   n == null ? '—' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
 export const usd = (micros: number | null | undefined) => (micros == null ? '—' : `$${(micros / 1_000_000).toFixed(3)}`);
+
+export const KIND_LABEL: Record<string, string> = {
+  planning: 'Perencanaan',
+  research: 'Riset',
+  work: 'Kerja',
+  review: 'Review',
+};

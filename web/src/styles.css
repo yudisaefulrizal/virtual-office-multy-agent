@@ -137,3 +137,19 @@ pre.artifact { margin: 0; white-space: pre-wrap; word-break: break-word; font-fa
 .labels-layer { position: absolute; inset: 0; pointer-events: none; }
 .label-anchor { position: absolute; left: 0; top: 0; will-change: transform; }
 .label-center { transform: translate(-30%, -50%); }
+
+.choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); cursor: pointer; font-weight: 400; font-size: 14px; }
+.choice + .choice { margin-top: 6px; }
+.choice input { width: auto; margin-top: 4px; }
+.choice > span { display: flex; flex-direction: column; gap: 2px; }
+.choice:has(input:checked) { border-color: var(--ink); background: #fafaf7; }
+
+.pipeline { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pipeline > li { display: flex; align-items: center; gap: 10px; }
+.stage { display: flex; flex-direction: column; gap: 8px; }
+.step { min-width: 180px; max-width: 260px; padding: 10px 12px; border: 1px solid var(--line); background: #fff; display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--ink); }
+.step.running { border-color: var(--blue-edge); background: var(--blue-tint); }
+.step.failed { border-color: var(--orange-edge); background: var(--orange-tint); }
+.step.cancelled, .step.superseded { opacity: 0.55; }
+.verdict-accept { border: 1px solid #b7d6bf; background: var(--green-tint); padding: 12px 14px; }
+.verdict-revise { border: 1px solid var(--orange-edge); background: var(--orange-tint); padding: 12px 14px; }

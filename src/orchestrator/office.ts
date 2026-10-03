@@ -1,11 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { INITIAL_AGENTS, ROLES } from '../agents/roles';
-import { kindSpec } from '../agents/schemas';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import {
+  INITIAL_AGENTS,
+  MAX_REVISION_ROUNDS,
+  PLANNABLE_ROLES,
+  ROLES,
+  planningInstructions,
+  reviewInstructions,
+  revisionInstructions,
+} from '../agents/roles';
+import { kindSpec, topoOrder, type Plan, type Review } from '../agents/schemas';
 import type { Tx } from '../db/client';
-import { agents, decisions, objectives, projects, roles, tasks } from '../db/schema';
-import { Objective, Project, type ObjectiveStatus, type ProjectStatus, type TaskStatus } from '../domain';
+import { agents, decisions, objectives, projects, roles, taskDependencies, tasks } from '../db/schema';
+import { Objective, Project, type Actor, type ObjectiveStatus, type ProjectStatus, type TaskKind, type TaskStatus } from '../domain';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
+
+type TaskRow = typeof tasks.$inferSelect;
 
 /** Isi role dan karyawan awal. Idempotent. */
 export async function seedOrganization(ctx: OfficeContext) {
@@ -61,25 +71,104 @@ export async function pickAgent(ctx: OfficeContext, tx: Tx, roleId: string, kind
   return capable[0]?.id ?? null;
 }
 
-export interface CreateObjectiveInput {
+interface NewTask {
+  objectiveId: string;
+  projectId: string;
+  kind: TaskKind;
   title: string;
-  description?: string;
+  instructions: string;
+  roleId: string;
+  planKey: string;
+  input?: Record<string, unknown>;
+  dependsOn?: string[];
+  retryOfTaskId?: string;
+  requestedBy: Actor;
+}
+
+/** Task baru selalu `pending`; promoteReadyTasks yang memasukkannya ke antrean. */
+async function insertTask(tx: Tx, emit: Emit, t: NewTask) {
+  const id = randomUUID();
+  await tx.insert(tasks).values({
+    id,
+    objectiveId: t.objectiveId,
+    projectId: t.projectId,
+    kind: t.kind,
+    planKey: t.planKey,
+    title: t.title,
+    instructions: t.instructions,
+    input: t.input ?? {},
+    requiredRoleId: t.roleId,
+    status: 'pending',
+    timeoutMs: kindSpec(t.kind).timeoutMs,
+    retryOfTaskId: t.retryOfTaskId ?? null,
+    requestedBy: t.requestedBy,
+  });
+  if (t.dependsOn?.length) {
+    await tx.insert(taskDependencies).values(t.dependsOn.map((d) => ({ taskId: id, dependsOn: d })));
+  }
+  emit({
+    type: 'task.created',
+    entityType: 'task',
+    entityId: id,
+    objectiveId: t.objectiveId,
+    actor: t.requestedBy,
+    payload: { title: t.title, kind: t.kind, planKey: t.planKey, dependsOn: t.dependsOn ?? [] },
+  });
+  return id;
 }
 
 /**
- * Slice 1 playbook: objective langsung dieksekusi sebagai satu task `work`
- * untuk Content Writer. Strategic loop (CEO → konsultasi → keputusan) masuk di Slice 3.
+ * Task `pending` yang semua dependency-nya selesai: assign ke agent yang mampu
+ * lalu masukkan ke antrean. Tanpa agent yang cocok, task tetap menunggu dan
+ * muncul di inbox Owner (DESIGN.md §6.4).
+ */
+export async function promoteReadyTasks(ctx: OfficeContext, tx: Tx, emit: Emit, projectId: string) {
+  const pending = await tx.select().from(tasks).where(and(eq(tasks.projectId, projectId), eq(tasks.status, 'pending')));
+  if (pending.length === 0) return;
+  const deps = await tx
+    .select({ taskId: taskDependencies.taskId, status: tasks.status })
+    .from(taskDependencies)
+    .innerJoin(tasks, eq(tasks.id, taskDependencies.dependsOn))
+    .where(inArray(taskDependencies.taskId, pending.map((t) => t.id)));
+
+  for (const t of pending) {
+    if (deps.some((d) => d.taskId === t.id && d.status !== 'completed')) continue;
+    const agentId = t.assignedAgentId ?? (t.requiredRoleId ? await pickAgent(ctx, tx, t.requiredRoleId, t.kind) : null);
+    if (!agentId) {
+      if (!t.error) {
+        await tx.update(tasks).set({ error: `Belum ada agent aktif untuk role ${t.requiredRoleId}` }).where(eq(tasks.id, t.id));
+        emit({ type: 'task.unassignable', entityType: 'task', entityId: t.id, objectiveId: t.objectiveId, actor: 'orchestrator', payload: { requiredRoleId: t.requiredRoleId } });
+      }
+      continue;
+    }
+    await tx.update(tasks).set({ status: 'queued', assignedAgentId: agentId, error: null }).where(eq(tasks.id, t.id));
+    emit({ type: 'task.assigned', entityType: 'task', entityId: t.id, objectiveId: t.objectiveId, actor: 'orchestrator', payload: { agentId, title: t.title } });
+  }
+}
+
+export type ObjectiveMode = 'planned' | 'direct';
+
+export interface CreateObjectiveInput {
+  title: string;
+  description?: string;
+  /** planned: Manager menyusun rencana + review. direct: satu task untuk Content Writer (hemat kuota). */
+  mode?: ObjectiveMode;
+}
+
+/**
+ * Objective → project. Strategic loop CEO (Slice 3) belum ada, jadi keputusan
+ * dibuat langsung oleh Owner; Manager yang merencanakan eksekusinya.
  */
 export async function createObjective(ctx: OfficeContext, input: CreateObjectiveInput) {
   return withTx(ctx, async (tx, emit) => {
+    const mode = input.mode ?? 'planned';
     const objectiveId = randomUUID();
     const decisionId = randomUUID();
     const projectId = randomUUID();
-    const taskId = randomUUID();
     const description = input.description?.trim() || input.title;
 
-    await tx.insert(objectives).values({ id: objectiveId, title: input.title, description, status: 'new' });
-    emit({ type: 'objective.created', entityType: 'objective', entityId: objectiveId, objectiveId, actor: 'owner', payload: { title: input.title } });
+    await tx.insert(objectives).values({ id: objectiveId, title: input.title, description, status: 'new', constraints: { mode } });
+    emit({ type: 'objective.created', entityType: 'objective', entityId: objectiveId, objectiveId, actor: 'owner', payload: { title: input.title, mode } });
 
     await tx.insert(decisions).values({
       id: decisionId,
@@ -87,33 +176,29 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
       status: 'approved',
       proposedBy: 'owner',
       reviewedAt: new Date(),
-      content: { strategy: 'Eksekusi langsung oleh Content Writer (Slice 1, tanpa strategic loop).' },
+      content: {
+        strategy:
+          mode === 'direct'
+            ? 'Mode cepat: langsung dikerjakan Content Writer tanpa perencanaan dan review.'
+            : 'Manager menyusun rencana, tim mengerjakan, Manager mereview.',
+      },
     });
     emit({ type: 'decision.approved', entityType: 'decision', entityId: decisionId, objectiveId, actor: 'owner' });
 
     await tx.insert(projects).values({ id: projectId, objectiveId, decisionId, title: input.title, status: 'active' });
     emit({ type: 'project.created', entityType: 'project', entityId: projectId, objectiveId, actor: 'orchestrator' });
 
-    const agentId = await pickAgent(ctx, tx, 'content_writer', 'work');
-    const status: TaskStatus = agentId ? 'queued' : 'pending';
-    await tx.insert(tasks).values({
-      id: taskId,
-      objectiveId,
-      projectId,
-      kind: 'work',
-      title: input.title,
-      instructions: description,
-      requiredRoleId: 'content_writer',
-      assignedAgentId: agentId,
-      status,
-      requestedBy: 'owner',
-    });
-    emit({ type: 'task.created', entityType: 'task', entityId: taskId, objectiveId, actor: 'orchestrator', payload: { title: input.title, kind: 'work' } });
-    emit(
-      agentId
-        ? { type: 'task.assigned', entityType: 'task', entityId: taskId, objectiveId, actor: 'orchestrator', payload: { agentId } }
-        : { type: 'task.unassignable', entityType: 'task', entityId: taskId, objectiveId, actor: 'orchestrator', payload: { requiredRoleId: 'content_writer' } },
-    );
+    const taskId =
+      mode === 'direct'
+        ? await insertTask(tx, emit, {
+            objectiveId, projectId, kind: 'work', title: input.title, instructions: description,
+            roleId: 'content_writer', planKey: 'main', requestedBy: 'owner',
+          })
+        : await insertTask(tx, emit, {
+            objectiveId, projectId, kind: 'planning', title: `Rencana: ${input.title}`, instructions: planningInstructions(),
+            roleId: 'manager', planKey: 'plan', requestedBy: 'owner',
+          });
+    await promoteReadyTasks(ctx, tx, emit, projectId);
 
     Objective.assert('new', 'active');
     await tx.update(objectives).set({ status: 'active', updatedAt: new Date() }).where(eq(objectives.id, objectiveId));
@@ -123,9 +208,137 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
   });
 }
 
+/** Playbook eksekusi: reaksi deterministik saat task selesai (DESIGN.md §4.4). */
+export async function onTaskCompleted(ctx: OfficeContext, tx: Tx, emit: Emit, task: TaskRow, result: unknown) {
+  if (task.projectId) {
+    if (task.kind === 'planning') await materializePlan(tx, emit, task, result as Plan);
+    if (task.kind === 'review') await handleReview(tx, emit, task, result as Review);
+    await promoteReadyTasks(ctx, tx, emit, task.projectId);
+  }
+  await onTaskFinished(tx, emit, task);
+}
+
+/** Task gagal atau dibatalkan: task yang bergantung padanya tidak mungkin jalan, jadi ikut dibatalkan. */
+export async function onTaskAborted(tx: Tx, emit: Emit, task: TaskRow) {
+  if (task.projectId) {
+    let blocked = [task.id];
+    while (blocked.length > 0) {
+      const dependents = await tx
+        .select({ id: tasks.id, objectiveId: tasks.objectiveId })
+        .from(taskDependencies)
+        .innerJoin(tasks, eq(tasks.id, taskDependencies.taskId))
+        .where(and(inArray(taskDependencies.dependsOn, blocked), eq(tasks.status, 'pending')));
+      blocked = [];
+      for (const d of dependents) {
+        await tx.update(tasks).set({ status: 'cancelled', error: 'Dependency gagal atau dibatalkan', completedAt: new Date() }).where(eq(tasks.id, d.id));
+        emit({ type: 'task.cancelled', entityType: 'task', entityId: d.id, objectiveId: d.objectiveId, actor: 'orchestrator', payload: { reason: 'dependency' } });
+        blocked.push(d.id);
+      }
+    }
+  }
+  await onTaskFinished(tx, emit, task);
+}
+
+async function materializePlan(tx: Tx, emit: Emit, planning: TaskRow, plan: Plan) {
+  const ordered = topoOrder(plan);
+  if (!ordered) throw new Error('Rencana tidak valid (siklus) lolos validasi');
+  await tx.update(projects).set({ planTemplate: plan }).where(eq(projects.id, planning.projectId!));
+
+  const idByKey = new Map<string, string>();
+  for (const t of ordered) {
+    const id = await insertTask(tx, emit, {
+      objectiveId: planning.objectiveId,
+      projectId: planning.projectId!,
+      kind: PLANNABLE_ROLES[t.role]!.kind,
+      title: t.title,
+      instructions: t.instructions,
+      roleId: t.role,
+      planKey: t.key,
+      dependsOn: t.depends_on.map((k) => idByKey.get(k)!),
+      requestedBy: `agent:${planning.assignedAgentId}`,
+    });
+    idByKey.set(t.key, id);
+  }
+  const planKeys = plan.tasks.map((t) => t.key);
+  await insertTask(tx, emit, {
+    objectiveId: planning.objectiveId,
+    projectId: planning.projectId!,
+    kind: 'review',
+    title: 'Review hasil',
+    instructions: reviewInstructions(plan.review_focus, 1),
+    roleId: 'manager',
+    planKey: 'review-1',
+    input: { planKeys, reviewFocus: plan.review_focus, round: 1 },
+    dependsOn: [...idByKey.values()],
+    requestedBy: `agent:${planning.assignedAgentId}`,
+  });
+  emit({ type: 'plan.created', entityType: 'project', entityId: planning.projectId!, objectiveId: planning.objectiveId, actor: `agent:${planning.assignedAgentId}`, payload: { tasks: plan.tasks.length, summary: plan.summary } });
+}
+
+/** Versi terbaru setiap plan key (revisi memakai key yang sama). */
+async function latestByPlanKey(tx: Tx, projectId: string, keys: string[]) {
+  const rows = await tx
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.projectId, projectId), inArray(tasks.planKey, keys)))
+    .orderBy(asc(tasks.createdAt));
+  const latest = new Map<string, TaskRow>();
+  for (const r of rows) latest.set(r.planKey!, r);
+  return latest;
+}
+
+async function handleReview(tx: Tx, emit: Emit, review: TaskRow, result: Review) {
+  const input = review.input as { planKeys: string[]; reviewFocus: string; round: number };
+  const base = { entityType: 'project', entityId: review.projectId!, objectiveId: review.objectiveId, actor: `agent:${review.assignedAgentId}` as Actor };
+
+  if (result.verdict === 'accept') {
+    emit({ ...base, type: 'review.accepted', payload: { round: input.round, feedback: result.feedback } });
+    return;
+  }
+  if (input.round > MAX_REVISION_ROUNDS) {
+    // Batas revisi tercapai: hasil terakhir dipakai, keputusan akhir diserahkan ke Owner.
+    emit({ ...base, type: 'review.escalated', payload: { round: input.round, feedback: result.feedback } });
+    return;
+  }
+
+  const latest = await latestByPlanKey(tx, review.projectId!, input.planKeys);
+  const revisedIds = new Map<string, string>();
+  for (const r of result.revisions) {
+    const orig = latest.get(r.task_key);
+    if (!orig || revisedIds.has(r.task_key)) continue;
+    const id = await insertTask(tx, emit, {
+      objectiveId: orig.objectiveId,
+      projectId: orig.projectId!,
+      kind: orig.kind as TaskKind,
+      title: `${orig.title.replace(/ \(revisi \d+\)$/, '')} (revisi ${input.round})`,
+      instructions: revisionInstructions(orig.instructions, result.feedback, r.instructions, r.task_key),
+      roleId: orig.requiredRoleId!,
+      planKey: r.task_key,
+      dependsOn: [orig.id],
+      retryOfTaskId: orig.id,
+      requestedBy: base.actor,
+    });
+    revisedIds.set(r.task_key, id);
+  }
+  const nextRound = input.round + 1;
+  await insertTask(tx, emit, {
+    objectiveId: review.objectiveId,
+    projectId: review.projectId!,
+    kind: 'review',
+    title: `Review hasil (putaran ${nextRound})`,
+    instructions: reviewInstructions(input.reviewFocus, nextRound),
+    roleId: 'manager',
+    planKey: `review-${nextRound}`,
+    input: { ...input, round: nextRound },
+    dependsOn: input.planKeys.map((k) => revisedIds.get(k) ?? latest.get(k)!.id),
+    requestedBy: base.actor,
+  });
+  emit({ ...base, type: 'review.revision_requested', payload: { round: input.round, tasks: [...revisedIds.keys()], feedback: result.feedback } });
+}
+
 /**
- * Dipanggil setelah task mencapai status terminal. Project dan objective
- * ditutup saat semua task-nya terminal. (Recurring objective: Phase 7.)
+ * Project dan objective ditutup saat semua task-nya terminal.
+ * (Recurring objective: Phase 7.)
  */
 export async function onTaskFinished(tx: Tx, emit: Emit, task: { projectId: string | null; objectiveId: string }) {
   if (!task.projectId) return;
@@ -150,7 +363,7 @@ export async function onTaskFinished(tx: Tx, emit: Emit, task: { projectId: stri
   const open = await tx
     .select({ id: projects.id })
     .from(projects)
-    .where(and(eq(projects.objectiveId, task.objectiveId), inArray(projects.status, ['active'])));
+    .where(and(eq(projects.objectiveId, task.objectiveId), eq(projects.status, 'active')));
   const [objective] = await tx.select().from(objectives).where(eq(objectives.id, task.objectiveId));
   if (objective && open.length === 0 && objective.status === 'active') {
     Objective.assert('active', outcome);

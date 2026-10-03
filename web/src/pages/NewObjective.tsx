@@ -4,6 +4,7 @@ import { api } from '../api';
 export function NewObjective() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [mode, setMode] = useState<'planned' | 'direct'>('planned');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -12,7 +13,7 @@ export function NewObjective() {
     setBusy(true);
     setError(null);
     try {
-      await api.createObjective(title.trim(), description.trim());
+      await api.createObjective(title.trim(), description.trim(), mode);
       setTitle('');
       setDescription('');
     } catch (err) {
@@ -46,12 +47,29 @@ export function NewObjective() {
           placeholder="Target, audiens, gaya bahasa, batasan…"
         />
       </div>
+      <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Cara kerja</legend>
+        <label className="choice">
+          <input type="radio" name="mode" checked={mode === 'planned'} onChange={() => setMode('planned')} />
+          <span>
+            <strong>Terencana</strong>
+            <span className="small muted">Manager menyusun rencana, tim mengerjakan, Manager mereview. ±4 run.</span>
+          </span>
+        </label>
+        <label className="choice">
+          <input type="radio" name="mode" checked={mode === 'direct'} onChange={() => setMode('direct')} />
+          <span>
+            <strong>Cepat</strong>
+            <span className="small muted">Langsung dikerjakan Content Writer. 1 run, tanpa review.</span>
+          </span>
+        </label>
+      </fieldset>
       {error && <p className="error">{error}</p>}
       <button className="btn" type="submit" disabled={busy || title.trim().length < 3}>
         {busy ? 'Mengirim…' : 'Kirim ke kantor'}
       </button>
       <p className="small muted" style={{ margin: 0 }}>
-        Slice 1: objective langsung dikerjakan Content Writer. Strategi CEO dan tim eksekutif menyusul.
+        Strategi CEO dan rapat eksekutif menyusul di tahap berikutnya.
       </p>
     </form>
   );

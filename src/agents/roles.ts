@@ -98,3 +98,58 @@ export const INITIAL_AGENTS: AgentSeed[] = [
   { name: 'Market Researcher', roleId: 'market_researcher', runtime: 'openrouter', supervisor: 'Manager', status: 'inactive' },
   { name: 'Content Writer', roleId: 'content_writer', runtime: 'claude-cli', supervisor: 'Manager' },
 ];
+
+/**
+ * Role yang boleh dipakai Manager dalam rencana, beserta task kind-nya.
+ * Executive tidak bisa ditugaskan oleh Manager.
+ */
+export const PLANNABLE_ROLES: Record<string, { kind: 'research' | 'work'; description: string }> = {
+  researcher: { kind: 'research', description: 'riset web, menghasilkan catatan riset dengan sumber' },
+  content_writer: { kind: 'work', description: 'menulis konten dan menyimpannya sebagai file' },
+};
+
+export const MAX_REVISION_ROUNDS = 2;
+
+export function planningInstructions() {
+  const roles = Object.entries(PLANNABLE_ROLES)
+    .map(([id, r]) => `- ${id}: ${r.description}`)
+    .join('\n');
+  return [
+    'Susun rencana kerja untuk objective di bawah.',
+    '',
+    'Role yang tersedia:',
+    roles,
+    '',
+    'Aturan:',
+    '- Gunakan task sesedikit mungkin (1–4). Kuota terbatas: tambahkan riset hanya bila benar-benar meningkatkan hasil.',
+    '- Task yang memakai hasil task lain wajib mencantumkannya di depends_on.',
+    '- Instruksi tiap task harus spesifik dan bisa dikerjakan tanpa bertanya balik.',
+    '- Jangan membuat task review; Manager mereview setelah semua task selesai.',
+  ].join('\n');
+}
+
+export function reviewInstructions(reviewFocus: string, round: number) {
+  return [
+    `Review hasil kerja tim (putaran ${round}). File hasil setiap task ada di folder context/.`,
+    '',
+    `Fokus review: ${reviewFocus}`,
+    '',
+    '- Pilih accept bila hasil layak dipakai untuk objective.',
+    '- Pilih revise hanya untuk masalah nyata, dan tulis instruksi revisi yang spesifik per task_key.',
+    `- Revisi dibatasi ${MAX_REVISION_ROUNDS} putaran; setelah itu hasil diserahkan ke Owner.`,
+  ].join('\n');
+}
+
+export function revisionInstructions(original: string, feedback: string, specific: string, key: string) {
+  return [
+    original,
+    '',
+    '## Revisi dari Manager',
+    '',
+    feedback,
+    '',
+    `Yang harus diperbaiki: ${specific}`,
+    '',
+    `Versi sebelumnya ada di context/${key}/. Perbaiki dan simpan hasil baru di out/.`,
+  ].join('\n');
+}

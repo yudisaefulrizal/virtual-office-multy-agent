@@ -24,10 +24,10 @@ async function office(...args: Parameters<typeof setupOffice>) {
 
 const validOutput = { summary: 'ok', artifacts: [{ path: 'out/result.md', description: 'hasil' }] };
 
-describe('Slice 1: objective → task → runtime → hasil tercatat', () => {
+describe('Mode cepat (Slice 1): objective → task → runtime → hasil tercatat', () => {
   it('menyelesaikan objective, menyimpan artifact, sesi, dan event', async () => {
     const { ctx, db, worker, runtime } = await office();
-    const { objectiveId, taskId } = await createObjective(ctx, { title: 'Caption kopi lokal', description: 'Tulis satu caption.' });
+    const { objectiveId, taskId } = await createObjective(ctx, { title: 'Caption kopi lokal', description: 'Tulis satu caption.', mode: 'direct' });
 
     const [queued] = await db.select().from(tasks).where(eq(tasks.id, taskId));
     expect(queued?.status).toBe('queued');
@@ -64,7 +64,7 @@ describe('Slice 1: objective → task → runtime → hasil tercatat', () => {
     const { ctx, db, worker, runtime } = await office((req, call) =>
       call === 1 ? { output: { wrong: true }, externalSessionId: 'ext-1' } : { output: validOutput },
     );
-    const { taskId } = await createObjective(ctx, { title: 'Caption' });
+    const { taskId } = await createObjective(ctx, { title: 'Caption', mode: 'direct' });
     await worker.drain();
 
     const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
@@ -80,7 +80,7 @@ describe('Slice 1: objective → task → runtime → hasil tercatat', () => {
 
   it('error berulang → retry sampai max_attempts → failed, objective failed', async () => {
     const { ctx, db, worker, runtime } = await office(() => ({ status: 'error', error: 'crash' }));
-    const { objectiveId, taskId } = await createObjective(ctx, { title: 'Caption' });
+    const { objectiveId, taskId } = await createObjective(ctx, { title: 'Caption', mode: 'direct' });
     await worker.drain();
 
     const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
@@ -95,7 +95,7 @@ describe('Slice 1: objective → task → runtime → hasil tercatat', () => {
   it('rate limit → task ditunda tanpa menambah attempt', async () => {
     const until = new Date(Date.now() + 3600_000);
     const { ctx, db, worker } = await office(() => ({ status: 'rate_limited', error: 'usage limit', retryAt: until }));
-    const { taskId } = await createObjective(ctx, { title: 'Caption' });
+    const { taskId } = await createObjective(ctx, { title: 'Caption', mode: 'direct' });
     await worker.drain();
 
     const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
@@ -107,8 +107,8 @@ describe('Slice 1: objective → task → runtime → hasil tercatat', () => {
 
   it('quota guard: tidak meng-claim task saat kuota jendela habis', async () => {
     const { ctx, db, worker, runtime, emitted } = await office(undefined, { maxRunsPerWindow: 1 });
-    const a = await createObjective(ctx, { title: 'Satu' });
-    const b = await createObjective(ctx, { title: 'Dua' });
+    const a = await createObjective(ctx, { title: 'Satu', mode: 'direct' });
+    const b = await createObjective(ctx, { title: 'Dua', mode: 'direct' });
     await worker.drain();
 
     const [ta] = await db.select().from(tasks).where(eq(tasks.id, a.taskId));
@@ -121,7 +121,7 @@ describe('Slice 1: objective → task → runtime → hasil tercatat', () => {
 
   it('task running yatim (crash) dikembalikan ke antrean saat startup', async () => {
     const { ctx, db, worker } = await office();
-    const { taskId } = await createObjective(ctx, { title: 'Caption' });
+    const { taskId } = await createObjective(ctx, { title: 'Caption', mode: 'direct' });
     await db.update(tasks).set({ status: 'running', attempt: 1, leaseUntil: new Date(Date.now() + 60_000) }).where(eq(tasks.id, taskId));
 
     await worker.recoverOrphans(true);
@@ -136,7 +136,7 @@ describe('Slice 1: objective → task → runtime → hasil tercatat', () => {
 
   it('owner bisa membatalkan task di antrean', async () => {
     const { ctx, db, worker } = await office();
-    const { objectiveId, taskId } = await createObjective(ctx, { title: 'Caption' });
+    const { objectiveId, taskId } = await createObjective(ctx, { title: 'Caption', mode: 'direct' });
     expect(await worker.cancel(taskId)).toBe(true);
     const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
     expect(task?.status).toBe('cancelled');

@@ -49,7 +49,7 @@ export interface OfficeEvent {
 }
 
 export interface InboxItem {
-  kind: 'task_failed' | 'task_unassignable';
+  kind: 'task_failed' | 'task_unassignable' | 'review_escalated';
   taskId: string;
   objectiveId: string;
   title: string;
@@ -101,6 +101,10 @@ export interface Artifact {
 export interface TraceTask {
   id: string;
   kind: string;
+  planKey: string | null;
+  dependsOn: string[];
+  retryOfTaskId: string | null;
+  assignedAgentId: string | null;
   title: string;
   instructions: string;
   status: string;
@@ -108,7 +112,15 @@ export interface TraceTask {
   maxAttempts: number;
   agentName: string | null;
   error: string | null;
-  result: { summary?: string; assumptions?: string[] } | null;
+  result: {
+    summary?: string;
+    assumptions?: string[];
+    findings?: { point: string; source: string }[];
+    verdict?: 'accept' | 'revise';
+    feedback?: string;
+    revisions?: { task_key: string; instructions: string }[];
+    tasks?: { key: string; title: string; role: string }[];
+  } | null;
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -119,7 +131,7 @@ export interface TraceTask {
 export interface ObjectiveTrace {
   objective: ObjectiveSummary & { updatedAt: string };
   decisions: { id: string; status: string; proposedBy: string; content: { strategy?: string }; createdAt: string }[];
-  projects: { id: string; title: string; status: string }[];
+  projects: { id: string; title: string; status: string; planTemplate: { summary: string; review_focus: string } | null }[];
   tasks: TraceTask[];
   usage: { sessions: number; inputTokens: number; outputTokens: number; costUsdMicros: number };
   events: OfficeEvent[];
@@ -141,8 +153,8 @@ export const api = {
   office: () => request<OfficeView>('/api/office'),
   objectives: () => request<ObjectiveSummary[]>('/api/objectives'),
   objective: (id: string) => request<ObjectiveTrace>(`/api/objectives/${id}`),
-  createObjective: (title: string, description: string) =>
-    request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description }) }),
+  createObjective: (title: string, description: string, mode: 'planned' | 'direct') =>
+    request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description, mode }) }),
   cancelTask: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}/cancel`, { method: 'POST' }),
 };
 

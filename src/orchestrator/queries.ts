@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import { agentSessions, agents, artifacts, decisions, events, objectives, projects, roles, tasks } from '../db/schema';
+import { agentSessions, agents, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks } from '../db/schema';
 import type { RuntimeId } from '../runtimes/runtime';
 import type { OfficeContext } from './context';
 
@@ -125,11 +125,31 @@ export async function officeView(
     .where(and(eq(tasks.status, 'failed'), gt(tasks.completedAt, new Date(Date.now() - 24 * 3600_000))))
     .orderBy(desc(tasks.completedAt))
     .limit(5);
+  const escalated = await db
+    .select()
+    .from(events)
+    .where(and(eq(events.type, 'review.escalated'), gt(events.createdAt, new Date(Date.now() - 24 * 3600_000))))
+    .orderBy(desc(events.id))
+    .limit(5);
+  const objectiveTitles = new Map(
+    escalated.length
+      ? (await db.select({ id: objectives.id, title: objectives.title }).from(objectives).where(inArray(objectives.id, escalated.map((e) => e.objectiveId!)))).map((o) => [o.id, o.title])
+      : [],
+  );
   const inbox = [
+    ...escalated.map((e) => ({
+      kind: 'review_escalated' as const,
+      taskId: e.entityId,
+      objectiveId: e.objectiveId!,
+      title: objectiveTitles.get(e.objectiveId!) ?? 'Objective',
+      detail: `Manager belum puas setelah ${(e.payload as { round?: number }).round ?? 3} putaran review. Keputusan akhir di tangan Anda.`,
+    })),
     ...failed.map((t) => ({ kind: 'task_failed' as const, taskId: t.id, objectiveId: t.objectiveId, title: t.title, detail: t.error ?? '' })),
     ...openTasks
-      .filter((t) => t.status === 'pending' && !t.assignedAgentId)
-      .map((t) => ({ kind: 'task_unassignable' as const, taskId: t.id, objectiveId: t.objectiveId, title: t.title, detail: `Butuh role ${t.requiredRoleId}` })),
+      // Hanya task yang memang tidak menemukan agent (error di-set oleh promoteReadyTasks),
+      // bukan task yang sekadar menunggu dependency.
+      .filter((t) => t.status === 'pending' && !t.assignedAgentId && t.error)
+      .map((t) => ({ kind: 'task_unassignable' as const, taskId: t.id, objectiveId: t.objectiveId, title: t.title, detail: t.error ?? `Butuh role ${t.requiredRoleId}` })),
   ];
 
   return {
@@ -195,6 +215,9 @@ export async function objectiveTrace(ctx: OfficeContext, id: string) {
   const sessionRows = taskIds.length
     ? await db.select().from(agentSessions).where(inArray(agentSessions.taskId, taskIds)).orderBy(asc(agentSessions.startedAt))
     : [];
+  const depRows = taskIds.length
+    ? await db.select().from(taskDependencies).where(inArray(taskDependencies.taskId, taskIds))
+    : [];
   const artifactRows = taskIds.length
     ? await db.select().from(artifacts).where(inArray(artifacts.taskId, taskIds)).orderBy(asc(artifacts.createdAt))
     : [];
@@ -216,6 +239,7 @@ export async function objectiveTrace(ctx: OfficeContext, id: string) {
     tasks: taskRows.map(({ task, agentName }) => ({
       ...task,
       agentName,
+      dependsOn: depRows.filter((d) => d.taskId === task.id).map((d) => d.dependsOn),
       sessions: sessionRows.filter((s) => s.taskId === task.id),
       artifacts: artifactRows.filter((a) => a.taskId === task.id),
     })),

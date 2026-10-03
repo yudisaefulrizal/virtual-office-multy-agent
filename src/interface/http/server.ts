@@ -14,6 +14,7 @@ import type { Worker } from '../../orchestrator/worker';
 const CreateObjectiveBody = z.object({
   title: z.string().trim().min(3).max(200),
   description: z.string().trim().max(5000).optional(),
+  mode: z.enum(['planned', 'direct']).optional(),
 });
 const IdParams = z.object({ id: z.uuid() });
 

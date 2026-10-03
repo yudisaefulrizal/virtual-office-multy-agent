@@ -47,7 +47,7 @@ export function OfficePage() {
           </div>
           <div className="scene-canvas">
             <Suspense fallback={<p style={{ padding: 20 }}>Menyiapkan kantor 3D…</p>}>
-              <OfficeScene agents={data.agents} runtimes={data.runtimes} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
+              <OfficeScene agents={data.agents} runtimes={data.runtimes} events={data.events} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
             </Suspense>
           </div>
           <div className="scene-foot">
@@ -70,7 +70,9 @@ export function OfficePage() {
             <h2 id="inbox">Perlu Anda</h2>
             {data.inbox.map((i) => (
               <a key={i.taskId} href={`#/objectives/${i.objectiveId}`} className="notice" style={{ color: 'var(--ink)', textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ fontWeight: 600 }}>{i.kind === 'task_failed' ? `Task gagal: ${i.title}` : `Belum ada agent: ${i.title}`}</span>
+                <span style={{ fontWeight: 600 }}>
+                  {i.kind === 'task_failed' ? `Task gagal: ${i.title}` : i.kind === 'review_escalated' ? `Perlu keputusan Anda: ${i.title}` : `Belum ada agent: ${i.title}`}
+                </span>
                 <span className="small muted">{i.detail}</span>
               </a>
             ))}
