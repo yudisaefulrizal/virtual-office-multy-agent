@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { agentSessions, agents, approvals, departments, schedules, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks, toolCredentials, toolExecutions } from '../db/schema';
+import { ROLES } from '../agents/roles';
 import { ROLE_TOOLS, TOOLS, toolById } from '../gateway/tools';
 import { spentUsdMicros } from './budget';
 import { describeOrgChange } from './org';
@@ -102,8 +103,12 @@ export async function officeView(
 
   // Kepala divisi = karyawan aktif tertua di divisinya (yang menunggu provider belum bisa memimpin).
   const headOf = new Map<string, string>();
-  const byAge = [...agentsOut].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime());
-  for (const a of byAge) if (a.status === 'active' && !headOf.has(a.department)) headOf.set(a.department, a.id);
+  // Agent seed dibuat di milidetik yang sama: urutan definisi role (CEO dulu) jadi penentu seri.
+  const rank = (roleId: string) => {
+    const i = ROLES.findIndex((r) => r.id === roleId);
+    return i < 0 ? ROLES.length : i;
+  };
+  const byAge = [...agentsOut].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime() || rank(x.roleId) - rank(y.roleId));
   for (const a of byAge) if (a.status === 'active' && !headOf.has(a.department)) headOf.set(a.department, a.id);
   const agentsView = agentsOut.map(({ createdAt: _c, ...a }) => ({ ...a, isHead: headOf.get(a.department) === a.id }));
   const departmentRows = await db.select().from(departments).orderBy(asc(departments.sortOrder), asc(departments.id));

@@ -262,7 +262,7 @@ describe('Organisasi dinamis: divisi dan role baru lewat usulan HRD', () => {
   it('kepala divisi = karyawan aktif tertua; kantor memuat daftar divisi', async () => {
     const o = await office();
     // Agent seed dan staf baru bisa dibuat di milidetik yang sama: tua-muda harus jelas.
-    await o.db.update(agents).set({ createdAt: new Date(Date.now() - 3600_000) });
+    await o.db.update(agents).set({ createdAt: new Date(Date.now() - 3600_000) }).where(eq(agents.roleId, 'content_writer'));
     await applyOrgChange(o.ctx, { type: 'hire', role_id: 'content_writer', reason: 'uji' }, 'owner');
     const view = await officeView(o.ctx, () => ({ inflight: 0, cooldownUntil: null }));
     expect(view.departments.map((d) => d.id)).toEqual(['executive', 'rnd', 'operations', 'content']);
