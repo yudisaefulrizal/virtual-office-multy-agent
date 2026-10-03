@@ -26,6 +26,12 @@ export function ObjectivePage({ id }: { id: string }) {
         <div className="row wrap">
           <span className="chip" style={{ color: st.tone, borderColor: 'currentColor', fontWeight: 600 }}>{st.label}</span>
           <span className="chip">Dibuat {dateTime(objective.createdAt)}</span>
+          {tasks.some((t) => t.status === 'completed' && t.artifacts.length > 0) && (
+            <>
+              <a href="#/results">Lihat di Hasil</a>
+              <a href={`/api/objectives/${objective.id}/download`} download>Unduh ZIP</a>
+            </>
+          )}
         </div>
         {objective.description !== objective.title && <p style={{ margin: 0, maxWidth: 900 }}>{objective.description}</p>}
       </div>
