@@ -44,6 +44,17 @@ describe('ClaudeCliRuntime', () => {
     expect(args[args.indexOf('--session-id') + 1]).toBe('sid');
   });
 
+  it('riset web di-allow eksplisit (mode headless tidak bisa bertanya izin); policy lain tidak', () => {
+    const research = rt.buildArgs({ ...req, nativeTools: 'research' });
+    expect(research[research.indexOf('--tools') + 1]).toContain('WebSearch');
+    expect(research[research.indexOf('--allowedTools') + 1]).toBe('WebSearch,WebFetch');
+    expect(rt.buildArgs(req)).not.toContain('--allowedTools');
+    expect(rt.buildArgs({ ...req, nativeTools: 'read_only' })).not.toContain('--allowedTools');
+    // Bersama Gateway: web tools + mcp dalam satu daftar.
+    const both = rt.buildArgs({ ...req, nativeTools: 'research', logPath: '/l/s.log', mcpServers: [{ name: 'vo', url: 'http://x/mcp', headers: {} }] });
+    expect(both[both.indexOf('--allowedTools') + 1]).toBe('WebSearch,WebFetch,mcp__vo');
+  });
+
   it('resume memakai --resume, bukan --session-id', () => {
     const args = rt.buildArgs({ ...req, resumeSessionId: 'prev' });
     expect(args[args.indexOf('--resume') + 1]).toBe('prev');

@@ -18,6 +18,9 @@ const TOOLS: Record<NativeToolPolicy, string[]> = {
   research: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
 };
 
+/** Tool web: perlu izin eksplisit di mode headless. */
+const WEB_TOOLS = ['WebSearch', 'WebFetch'];
+
 const RATE_LIMIT_RE = /rate.?limit|usage limit|limit reached|too many requests|\b429\b|quota/i;
 
 /** Runtime utama: Claude Code mode headless (`claude -p`). */
@@ -47,10 +50,15 @@ export class ClaudeCliRuntime implements AgentRuntime {
     if (req.resumeSessionId) args.push('--resume', req.resumeSessionId);
     else args.push('--session-id', req.sessionId);
     if (req.model) args.push('--model', req.model);
+    // Mode headless tidak bisa bertanya izin: tool yang tidak di-allow ditolak diam-diam (permission_denials).
+    // acceptEdits hanya mencakup edit file, jadi riset web harus di-allow eksplisit. Hanya untuk policy research.
+    const allowed = TOOLS[req.nativeTools].filter((t) => WEB_TOOLS.includes(t));
     if (req.mcpServers?.length) {
       // Izinkan semua tool dari server Gateway; izin per role ditegakkan Gateway.
-      args.push('--mcp-config', mcpConfigPath(req), '--allowedTools', req.mcpServers.map((m) => `mcp__${m.name}`).join(','));
+      allowed.push(...req.mcpServers.map((m) => `mcp__${m.name}`));
+      args.push('--mcp-config', mcpConfigPath(req));
     }
+    if (allowed.length) args.push('--allowedTools', allowed.join(','));
     return args;
   }
 
