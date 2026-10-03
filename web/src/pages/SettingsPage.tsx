@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, useLive, type AgentRow, type ProviderInfo, type ToolInfo } from '../api';
+import { OrgSection } from './OrgSection';
 
 export function SettingsPage() {
   const providers = useLive(api.providers);
@@ -9,6 +10,7 @@ export function SettingsPage() {
   return (
     <main className="page split">
       <section className="main">
+        <OrgSection />
         <section className="card" aria-labelledby="team">
           <h2 id="team">Karyawan</h2>
           <p className="small muted" style={{ margin: 0 }}>

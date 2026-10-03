@@ -3,10 +3,30 @@ import type { NativeToolPolicy, RuntimeId } from '../runtimes/runtime';
 export interface RoleDef {
   id: string;
   name: string;
-  department: 'executive' | 'rnd' | 'operations' | 'content';
+  /** departments.id */
+  department: string;
   nativeTools: NativeToolPolicy;
   instructions: string;
+  /** Boleh dipakai Manager dalam rencana kerja. */
+  plannable?: { kind: 'work' | 'research'; description: string };
 }
+
+export interface DepartmentDef {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/** Divisi awal. Divisi baru dibuat Owner atau diusulkan HRD (disetujui Owner). */
+export const DEPARTMENTS: DepartmentDef[] = [
+  { id: 'executive', name: 'Ruang Eksekutif', color: '#6e7c99' },
+  { id: 'rnd', name: 'Lab R&D', color: '#5e968f' },
+  { id: 'operations', name: 'Operasional', color: '#9883ae' },
+  { id: 'content', name: 'Studio Konten', color: '#c49a62' },
+];
+
+/** Warna untuk divisi baru, berputar. Dipilih agar tetap terbedakan dari karpet divisi awal. */
+export const DEPARTMENT_COLORS = ['#b86a6a', '#6a9ab8', '#8fae5e', '#b8873a', '#7a6ab8', '#4f9a8f', '#c26b94', '#7f8896'];
 
 /** Role awal kantor. Agent hanya bisa dibuat dari role yang ada (DESIGN.md A6). */
 export const ROLES: RoleDef[] = [
@@ -48,6 +68,7 @@ export const ROLES: RoleDef[] = [
     name: 'Research Agent',
     department: 'rnd',
     nativeTools: 'research',
+    plannable: { kind: 'research', description: 'riset web, menghasilkan catatan riset dengan sumber' },
     instructions:
       'Kamu peneliti R&D. Kumpulkan evidence dan sebutkan sumbernya. Jangan mengarang fakta; tandai hal yang belum terverifikasi. ' +
       'Kamu menyediakan evidence, bukan mengambil keputusan.',
@@ -73,6 +94,7 @@ export const ROLES: RoleDef[] = [
     name: 'Content Writer',
     department: 'content',
     nativeTools: 'workspace_write',
+    plannable: { kind: 'work', description: 'menulis konten dan menyimpannya sebagai file' },
     instructions:
       'Kamu penulis konten media sosial. Tulis konten yang jelas, bernilai, dan sesuai audiens. ' +
       'Simpan setiap hasil sebagai file Markdown di folder out/.',
@@ -99,21 +121,17 @@ export const INITIAL_AGENTS: AgentSeed[] = [
   { name: 'Content Writer', roleId: 'content_writer', runtime: 'claude-cli', supervisor: 'Manager' },
 ];
 
-/**
- * Role yang boleh dipakai Manager dalam rencana, beserta task kind-nya.
- * Executive tidak bisa ditugaskan oleh Manager.
- */
-export const PLANNABLE_ROLES: Record<string, { kind: 'research' | 'work'; description: string }> = {
-  researcher: { kind: 'research', description: 'riset web, menghasilkan catatan riset dengan sumber' },
-  content_writer: { kind: 'work', description: 'menulis konten dan menyimpannya sebagai file' },
-};
-
 export const MAX_REVISION_ROUNDS = 2;
 
-export function planningInstructions() {
-  const roles = Object.entries(PLANNABLE_ROLES)
-    .map(([id, r]) => `- ${id}: ${r.description}`)
-    .join('\n');
+export interface PlannableRole {
+  id: string;
+  kind: 'work' | 'research';
+  description: string;
+}
+
+/** Daftar role yang tersedia diambil dari database saat perencanaan, bukan dari kode. */
+export function planningInstructions(plannable: PlannableRole[]) {
+  const roles = plannable.map((r) => `- ${r.id}: ${r.description}`).join('\n');
   return [
     'Susun rencana kerja untuk objective di bawah.',
     '',
@@ -199,9 +217,12 @@ export function decisionInstructions(ownerFeedback?: string) {
   ].join('\n');
 }
 
-export function executionPlanningInstructions(decision: { strategy: string; execution_brief: string; success_metrics: string[] }) {
+export function executionPlanningInstructions(
+  decision: { strategy: string; execution_brief: string; success_metrics: string[] },
+  plannable: PlannableRole[],
+) {
   return [
-    planningInstructions(),
+    planningInstructions(plannable),
     '',
     '## Keputusan CEO yang sudah disetujui Owner',
     '',

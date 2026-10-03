@@ -1,7 +1,8 @@
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import { agentSessions, agents, approvals, schedules, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks, toolCredentials, toolExecutions } from '../db/schema';
+import { agentSessions, agents, approvals, departments, schedules, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks, toolCredentials, toolExecutions } from '../db/schema';
 import { ROLE_TOOLS, TOOLS, toolById } from '../gateway/tools';
 import { spentUsdMicros } from './budget';
+import { describeOrgChange } from './org';
 import type { RuntimeId } from '../runtimes/runtime';
 import type { OfficeContext } from './context';
 
@@ -11,6 +12,8 @@ export interface RuntimeInfo {
   id: RuntimeId;
   configured: boolean;
   concurrency: number;
+  /** Batas dari konfigurasi; concurrency bisa turun sementara setelah rate limit. */
+  maxConcurrency: number;
   inflight: number;
   quota: { used: number; max: number; windowHours: number } | null;
   cooldownUntil: string | null;
@@ -22,7 +25,7 @@ const RECENT_DONE_MS = 12 * 3600_000;
 /** Status kantor untuk halaman Kantor 3D. */
 export async function officeView(
   ctx: OfficeContext,
-  runtimeState: (id: RuntimeId) => { inflight: number; cooldownUntil: Date | null },
+  runtimeState: (id: RuntimeId) => { inflight: number; cooldownUntil: Date | null; concurrency?: number },
 ) {
   const db = ctx.db;
   const agentRows = await db
@@ -80,6 +83,7 @@ export async function officeView(
     return {
       id: agent.id,
       name: agent.name,
+      createdAt: agent.createdAt,
       roleId: role.id,
       roleName: role.name,
       department: role.department,
@@ -93,6 +97,14 @@ export async function officeView(
       task,
     };
   });
+
+  // Kepala divisi = karyawan aktif tertua di divisinya.
+  const headOf = new Map<string, string>();
+  for (const a of [...agentsOut].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())) {
+    if (a.status !== 'inactive' && !headOf.has(a.department)) headOf.set(a.department, a.id);
+  }
+  const agentsView = agentsOut.map(({ createdAt: _c, ...a }) => ({ ...a, isHead: headOf.get(a.department) === a.id }));
+  const departmentRows = await db.select().from(departments).orderBy(asc(departments.sortOrder), asc(departments.id));
 
   const runtimeIds: RuntimeId[] = ['claude-cli', 'openrouter', 'fake'];
   const runtimesOut: RuntimeInfo[] = [];
@@ -113,7 +125,8 @@ export async function officeView(
     runtimesOut.push({
       id,
       configured,
-      concurrency: limits?.concurrency ?? 0,
+      concurrency: state.concurrency ?? limits?.concurrency ?? 0,
+      maxConcurrency: limits?.concurrency ?? 0,
       inflight: state.inflight,
       quota,
       cooldownUntil: state.cooldownUntil?.toISOString() ?? null,
@@ -167,8 +180,8 @@ export async function officeView(
       kind: 'approval_pending' as const,
       taskId: a.id,
       objectiveId: a.objectiveId ?? '',
-      title: `${toolById(a.toolId ?? '')?.title ?? a.toolId} — diminta ${agentName ?? 'agent'}`,
-      detail: JSON.stringify(a.args).slice(0, 240),
+      title: `${toolById(a.toolId ?? '')?.title ?? a.toolId} — diminta ${agentName ?? 'sistem'}`,
+      detail: (a.toolId === 'propose_org_change' ? describeOrgChange(a.args as never) : JSON.stringify(a.args)).slice(0, 400),
     })),
     ...budgetBlocked.map((b) => ({
       kind: 'budget_exceeded' as const,
@@ -228,8 +241,9 @@ export async function officeView(
   return {
     forceRuntime: ctx.forceRuntime ?? null,
     meeting,
+    departments: departmentRows.map((d) => ({ id: d.id, name: d.name, color: d.color })),
     nextRun: next ? { objectiveId: next.objectiveId, title: next.title, at: next.at.toISOString() } : null,
-    agents: agentsOut,
+    agents: agentsView,
     runtimes: runtimesOut,
     inbox,
     events: await recentEvents(ctx, 30),

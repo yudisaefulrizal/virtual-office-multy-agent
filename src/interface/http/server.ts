@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { agentSessions, agents, artifacts, knowledge, roles } from '../../db/schema';
 import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator/context';
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
+import { applyOrgChange, listOrg } from '../../orchestrator/org';
 import { createObjective } from '../../orchestrator/office';
 import { setObjectiveBudget } from '../../orchestrator/budget';
 import { setSchedule } from '../../orchestrator/scheduler';
@@ -183,10 +184,37 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     return usageStats(ctx, days);
   });
 
+  // Organisasi: Owner langsung membuat divisi/role atau merekrut staf (HRD mengusulkan lewat persetujuan).
+  app.get('/api/org', () => listOrg(ctx));
+  const OrgBody = z.object({
+    type: z.enum(['hire', 'new_department', 'new_role']),
+    reason: z.string().trim().max(500).default('Diminta Owner'),
+    role_id: z.string().max(64).optional(),
+    runtime: z.enum(['claude-cli', 'openrouter']).optional(),
+    name: z.string().trim().max(128).optional(),
+    department_id: z.string().max(64).optional(),
+    color: z.string().max(9).optional(),
+    instructions: z.string().max(3000).optional(),
+    native_tools: z.enum(['read_only', 'workspace_write', 'research']).optional(),
+    task_kind: z.enum(['work', 'research']).optional(),
+    description: z.string().max(300).optional(),
+  });
+  app.post('/api/org', async (req) => {
+    await applyOrgChange(ctx, OrgBody.parse(req.body), 'owner', 'owner');
+    void worker.tick();
+    return listOrg(ctx);
+  });
+
   app.get('/api/settings', () => getAllSettings(ctx.db));
   app.put('/api/settings', async (req) => {
     const body = z
-      .object({ decision_approval: z.enum(['always', 'auto']).optional(), usd_to_idr: z.number().positive().max(1_000_000).optional() })
+      .object({
+        decision_approval: z.enum(['always', 'auto']).optional(),
+        usd_to_idr: z.number().positive().max(1_000_000).optional(),
+        max_staff_per_role: z.number().int().min(1).max(20).optional(),
+        auto_hire: z.enum(['auto', 'ask']).optional(),
+        hire_wait_seconds: z.number().int().min(10).max(3600).optional(),
+      })
       .parse(req.body);
     await withTx(ctx, async (tx, emit) => {
       for (const [k, v] of Object.entries(body)) {

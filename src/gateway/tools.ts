@@ -4,6 +4,7 @@ import { toolCredentials } from '../db/schema';
 import { UserError } from '../domain';
 import type { OfficeContext } from '../orchestrator/context';
 import { searchKnowledge } from '../orchestrator/knowledge';
+import { type OrgChangeArgs, applyOrgChange } from '../orchestrator/org';
 
 export interface Caller {
   agentId: string;
@@ -34,7 +35,32 @@ async function credentialFor(ctx: OfficeContext, toolId: string) {
   return { secret: ctx.secrets.decrypt(row.secretEnc), config: row.config as Record<string, string> };
 }
 
+const OrgChangeShape = {
+  type: z.enum(['hire', 'new_department', 'new_role']).describe('hire: tambah staf dari role yang ada; new_department: ruangan/divisi baru; new_role: role baru (otomatis merekrut satu staf)'),
+  reason: z.string().min(3).max(500).describe('Alasan berbasis data, mis. antrean atau beban kerja'),
+  role_id: z.string().max(64).optional().describe('hire: id role yang sudah ada'),
+  runtime: z.enum(['claude-cli', 'openrouter']).optional(),
+  name: z.string().max(128).optional().describe('new_department / new_role: nama'),
+  department_id: z.string().max(64).optional().describe('new_role: id divisi yang sudah ada'),
+  color: z.string().max(9).optional(),
+  instructions: z.string().max(3000).optional().describe('new_role: instruksi kerja role'),
+  native_tools: z.enum(['read_only', 'workspace_write', 'research']).optional(),
+  task_kind: z.enum(['work', 'research']).optional().describe('new_role: isi bila Manager boleh memakai role ini dalam rencana'),
+  description: z.string().max(300).optional().describe('new_role: satu kalimat kemampuan role untuk daftar Manager'),
+};
+
 export const TOOLS: ToolDef[] = [
+  define({
+    id: 'propose_org_change',
+    title: 'Usulkan perubahan organisasi',
+    description:
+      'Usulkan staf tambahan, divisi (ruangan) baru, atau role baru. Tidak langsung berlaku: Owner harus menyetujui. Role baru hanya mendapat tool berisiko rendah.',
+    risk: 'high',
+    input: OrgChangeShape,
+    async execute(ctx, args) {
+      return applyOrgChange(ctx, args as OrgChangeArgs, 'owner', 'hrd-proposal');
+    },
+  }),
   define({
     id: 'knowledge_search',
     title: 'Cari knowledge organisasi',
@@ -108,11 +134,14 @@ export const ROLE_TOOLS: Record<string, string[]> = {
   ceo: ['knowledge_search', 'notify_owner'],
   cfo: ['knowledge_search', 'notify_owner'],
   cto: ['knowledge_search', 'notify_owner'],
-  hrd: ['knowledge_search', 'notify_owner'],
+  hrd: ['knowledge_search', 'notify_owner', 'propose_org_change'],
   manager: ['knowledge_search', 'notify_owner', 'instagram_publish'],
   researcher: ['knowledge_search', 'notify_owner'],
   market_researcher: ['knowledge_search'],
   content_writer: ['knowledge_search', 'notify_owner', 'instagram_publish'],
 };
 
-export const toolsForRole = (roleId: string) => (ROLE_TOOLS[roleId] ?? []).map(toolById).filter((t): t is ToolDef => !!t);
+/** Role buatan HRD/Owner hanya mendapat tool berisiko rendah; tidak bisa menambah izinnya sendiri (A6). */
+export const DEFAULT_TOOLS = ['knowledge_search', 'notify_owner'];
+export const allowedToolIds = (roleId: string) => ROLE_TOOLS[roleId] ?? DEFAULT_TOOLS;
+export const toolsForRole = (roleId: string) => allowedToolIds(roleId).map(toolById).filter((t): t is ToolDef => !!t);

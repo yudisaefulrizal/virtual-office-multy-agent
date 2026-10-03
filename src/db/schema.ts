@@ -28,6 +28,21 @@ export const roles = mysqlTable('roles', {
   department: varchar('department', { length: 64 }).notNull(),
   instructions: text('instructions').notNull(),
   nativeTools: varchar('native_tools', { length: 32 }).notNull(), // read_only | workspace_write | research
+  /** Role yang boleh dipakai Manager dalam rencana kerja (task kind: work | research). */
+  plannable: boolean('plannable').notNull().default(false),
+  taskKind: varchar('task_kind', { length: 16 }),
+  description: text('description'),
+  createdBy: varchar('created_by', { length: 80 }).notNull().default('system'),
+  createdAt: createdAt(),
+});
+
+/** Divisi = ruangan di kantor. Role menunjuk divisi lewat roles.department (= departments.id). */
+export const departments = mysqlTable('departments', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  name: varchar('name', { length: 128 }).notNull(),
+  color: varchar('color', { length: 9 }).notNull(),
+  sortOrder: int('sort_order').notNull().default(0),
+  createdBy: varchar('created_by', { length: 80 }).notNull().default('system'),
   createdAt: createdAt(),
 });
 
@@ -98,6 +113,8 @@ export const tasks = mysqlTable(
     timeoutMs: int('timeout_ms').notNull().default(600_000),
     leaseUntil: ts('lease_until'),
     notBefore: ts('not_before'),
+    /** Kapan task terakhir masuk antrean; dasar aturan HRD menambah staf. */
+    queuedAt: ts('queued_at'),
     result: json('result'),
     error: text('error'),
     retryOfTaskId: id('retry_of_task_id').references((): AnyMySqlColumn => tasks.id),

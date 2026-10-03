@@ -10,11 +10,12 @@ import {
 } from '../agents/roles';
 import type { DecisionProposal, Framing } from '../agents/schemas';
 import type { Tx } from '../db/client';
-import { agents, decisions, objectives, projects, taskDependencies, tasks } from '../db/schema';
+import { agents, decisions, objectives, projects, roles, taskDependencies, tasks } from '../db/schema';
 import { Decision, Objective, UserError, type Actor, type DecisionStatus, type ObjectiveStatus } from '../domain';
 import type { RuntimeId } from '../runtimes/runtime';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
 import { insertTask, promoteReadyTasks } from './office';
+import { hireAgent, loadPlannableRoles } from './org';
 import { getSetting } from './settings';
 
 type TaskRow = typeof tasks.$inferSelect;
@@ -155,25 +156,12 @@ async function approveTx(ctx: OfficeContext, tx: Tx, emit: Emit, decisionId: str
   emit({ type: 'decision.approved', entityType: 'decision', entityId: d.id, objectiveId: d.objectiveId, actor, payload: { note } });
 
   for (const member of proposal.team) {
-    const role = ROLES.find((r) => r.id === member.role);
+    const [role] = await tx.select().from(roles).where(eq(roles.id, member.role));
     if (!role) continue;
     const runtime = member.runtime as RuntimeId;
     const existing = await tx.select().from(agents).where(and(eq(agents.roleId, role.id), ne(agents.status, 'inactive')));
     if (existing.length === 0) {
-      const id = randomUUID();
-      const sameName = await tx.select({ id: agents.id }).from(agents).where(eq(agents.name, role.name));
-      const name = sameName.length ? `${role.name} ${sameName.length + 1}` : role.name;
-      await tx.insert(agents).values({
-        id,
-        roleId: role.id,
-        name,
-        runtime,
-        model: runtime === 'claude-cli' ? ctx.defaultModel : null,
-        status: ctx.runtimes.has(effectiveRuntime(ctx, runtime)) ? 'active' : 'waiting_provider',
-        workspacePath: `agents/${id}`,
-        createdBy: `decision:${d.id}`,
-      });
-      emit({ type: 'agent.created', entityType: 'agent', entityId: id, objectiveId: d.objectiveId, actor, payload: { name, roleId: role.id, runtime, reason: member.reason } });
+      await hireAgent(ctx, tx, emit, { roleId: role.id, runtime, actor, createdBy: `decision:${d.id}`, reason: member.reason, objectiveId: d.objectiveId });
     } else {
       const a = existing[0]!;
       if (a.runtime === runtime) continue;
@@ -200,7 +188,7 @@ async function approveTx(ctx: OfficeContext, tx: Tx, emit: Emit, decisionId: str
     projectId,
     kind: 'planning',
     title: `Rencana: ${objective!.title}`,
-    instructions: executionPlanningInstructions(proposal),
+    instructions: executionPlanningInstructions(proposal, await loadPlannableRoles(tx)),
     roleId: 'manager',
     planKey: 'plan',
     requestedBy: actor,

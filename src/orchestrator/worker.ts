@@ -8,11 +8,13 @@ import { agentSessions, agents, artifacts, objectives, roles, taskDependencies, 
 import { Task, type TaskStatus } from '../domain';
 import type { AgentRuntime, NativeToolPolicy, RunRequest, RunResult, RuntimeId } from '../runtimes/runtime';
 import { rowsOf, type Tx } from '../db/client';
-import { type Emit, type OfficeContext, withTx } from './context';
+import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
 import { knowledgePromptSection, searchKnowledge } from './knowledge';
 import { spentUsdMicros } from './budget';
 import { runDueSchedules } from './scheduler';
 import { onTaskAborted, onTaskCompleted } from './office';
+import { loadPlannableRoles } from './org';
+import { reviewStaffing } from './staffing';
 import { scanOutDir } from './artifacts';
 
 const LEASE_MS = 90_000;
@@ -36,6 +38,11 @@ type AgentRow = typeof agents.$inferSelect;
 export class Worker {
   private inflight = new Map<string, { ctl: AbortController; done: Promise<void> }>();
   private cooldownUntil = new Map<RuntimeId, Date>();
+  /**
+   * Batas paralel efektif per runtime. Turun separuh saat kena rate limit dan naik satu per run
+   * yang berhasil, sampai batas konfigurasi: paralel secukupnya, bukan angka tetap.
+   */
+  private caps = new Map<RuntimeId, number>();
   private quotaBlocked = new Set<RuntimeId>();
   private timer?: NodeJS.Timeout;
   private ticking = false;
@@ -71,7 +78,19 @@ export class Worker {
       inflight: this.inflightFor(id),
       cooldownUntil: until && until > new Date() ? until : null,
       quotaBlocked: this.quotaBlocked.has(id),
+      concurrency: this.capFor(id),
     };
+  }
+
+  private capFor(id: RuntimeId) {
+    const max = this.ctx.limits.get(id)?.concurrency ?? 1;
+    return Math.min(max, this.caps.get(id) ?? max);
+  }
+
+  private adjustCap(id: RuntimeId, outcome: 'rate_limited' | 'ok') {
+    const max = this.ctx.limits.get(id)?.concurrency ?? 1;
+    const cur = this.capFor(id);
+    this.caps.set(id, outcome === 'rate_limited' ? Math.max(1, Math.floor(cur / 2)) : Math.min(max, cur + 1));
   }
 
   /** Hentikan task: sesi berjalan di-abort; task di antrean langsung dibatalkan. */
@@ -113,6 +132,10 @@ export class Worker {
       if (Date.now() - this.lastScheduleCheck >= SCHEDULE_CHECK_MS) {
         this.lastScheduleCheck = Date.now();
         await runDueSchedules(this.ctx).catch((err) => console.error('[scheduler]', err));
+        await reviewStaffing(this.ctx, (id) => {
+          const st = this.runtimeState(id);
+          return { inflight: st.inflight, concurrency: st.concurrency, blocked: !!st.cooldownUntil || st.quotaBlocked };
+        }).catch((err) => console.error('[staffing]', err));
       }
       for (const [id, runtime] of this.ctx.runtimes) {
         while (await this.hasCapacity(id)) {
@@ -142,7 +165,7 @@ export class Worker {
     if (!limits) return false;
     const until = this.cooldownUntil.get(id);
     if (until && until > new Date()) return false;
-    if (this.inflightFor(id) >= limits.concurrency) return false;
+    if (this.inflightFor(id) >= this.capFor(id)) return false;
 
     if (limits.maxRunsPerWindow && limits.windowHours) {
       const since = new Date(Date.now() - limits.windowHours * 3600_000);
@@ -166,32 +189,60 @@ export class Worker {
     return true;
   }
 
+  /**
+   * Ambil task berikutnya untuk runtime ini. Satu karyawan hanya mengerjakan satu task pada satu
+   * waktu, jadi jumlah staf = kapasitas paralel yang sebenarnya. Agent dipilih saat diambil: task
+   * dikerjakan oleh staf role yang sedang menganggur (pilihan awal diutamakan).
+   */
   private async claim(runtimeId: RuntimeId): Promise<string | null> {
-    const force = this.ctx.forceRuntime;
+    const ctx = this.ctx;
+    const force = ctx.forceRuntime;
     if (force && force !== runtimeId) return null;
-    const runtimeFilter = force ? sql`true` : sql`a.runtime = ${runtimeId}`;
+    const runtime = ctx.runtimes.get(runtimeId);
+    if (!runtime) return null;
+
     // MySQL tidak punya UPDATE … RETURNING: kunci baris dengan SKIP LOCKED, lalu update di transaksi yang sama.
-    const row = await this.ctx.db.transaction(async (tx) => {
+    const row = await ctx.db.transaction(async (tx) => {
       const now = new Date();
-      const [picked] = rowsOf<{ id: string; objective_id: string; assigned_agent_id: string }>(
+      const candidates = rowsOf<{ id: string; objective_id: string; kind: string; required_role_id: string | null; assigned_agent_id: string | null }>(
         await tx.execute(sql`
-          select t.id, t.objective_id, t.assigned_agent_id from tasks t join agents a on a.id = t.assigned_agent_id
-          where t.status = 'queued' and a.status = 'active' and ${runtimeFilter}
-            and (t.not_before is null or t.not_before <= ${now})
+          select t.id, t.objective_id, t.kind, t.required_role_id, t.assigned_agent_id from tasks t
+          where t.status = 'queued' and (t.not_before is null or t.not_before <= ${now})
           order by t.created_at
-          limit 1
-          for update of t skip locked`),
+          limit 25
+          for update skip locked`),
       );
-      if (!picked) return null;
-      await tx
-        .update(tasks)
-        .set({ status: 'running', attempt: sql`${tasks.attempt} + 1`, startedAt: now, leaseUntil: new Date(now.getTime() + LEASE_MS), notBefore: null })
-        .where(eq(tasks.id, picked.id));
-      return picked;
+      if (candidates.length === 0) return null;
+      const busy = new Set(
+        rowsOf<{ a: string }>(await tx.execute(sql`select distinct assigned_agent_id as a from tasks where status = 'running' and assigned_agent_id is not null`)).map((r) => r.a),
+      );
+      const staff = await tx.select().from(agents).where(eq(agents.status, 'active'));
+
+      for (const c of candidates) {
+        if (!kindSpec(c.kind).requires.every((cap) => runtime.capabilities.has(cap))) continue;
+        const eligible = staff.filter(
+          (a) => !busy.has(a.id) && effectiveRuntime(ctx, a.runtime) === runtimeId && (c.required_role_id ? a.roleId === c.required_role_id : a.id === c.assigned_agent_id),
+        );
+        const agent = eligible.find((a) => a.id === c.assigned_agent_id) ?? eligible[0];
+        if (!agent) continue;
+        await tx
+          .update(tasks)
+          .set({
+            status: 'running',
+            assignedAgentId: agent.id,
+            attempt: sql`${tasks.attempt} + 1`,
+            startedAt: now,
+            leaseUntil: new Date(now.getTime() + LEASE_MS),
+            notBefore: null,
+          })
+          .where(eq(tasks.id, c.id));
+        return { id: c.id, objective_id: c.objective_id, assigned_agent_id: agent.id };
+      }
+      return null;
     });
     if (!row) return null;
     this.runtimeOf.set(row.id, runtimeId);
-    await withTx(this.ctx, async (_tx, emit) =>
+    await withTx(ctx, async (_tx, emit) =>
       emit({ type: 'task.started', entityType: 'task', entityId: row.id, objectiveId: row.objective_id, actor: `agent:${row.assigned_agent_id}` }),
     );
     return row.id;
@@ -259,10 +310,11 @@ export class Worker {
       };
 
       // Schema dulu, lalu validasi semantik (mis. DAG rencana). Keduanya memicu satu kali repair.
+      const checkCtx = task.kind === 'planning' ? { plannable: (await loadPlannableRoles(this.ctx.db)).map((r) => r.id) } : undefined;
       const validate = (output: unknown): { ok: true; data: unknown } | { ok: false; error: string } => {
         const p = spec.schema.safeParse(output);
         if (!p.success) return { ok: false, error: p.error.message };
-        const problem = spec.check?.(p.data, task.input);
+        const problem = spec.check?.(p.data, task.input, checkCtx);
         return problem ? { ok: false, error: problem } : { ok: true, data: p.data };
       };
 
@@ -280,7 +332,11 @@ export class Worker {
       }
 
       if (res.status === 'aborted' || signal.aborted) return await this.cancelled(task);
-      if (res.status === 'rate_limited') return await this.deferred(task, runtime.id, res);
+      if (res.status === 'rate_limited') {
+        this.adjustCap(runtime.id, 'rate_limited');
+        return await this.deferred(task, runtime.id, res);
+      }
+      if (res.status === 'ok') this.adjustCap(runtime.id, 'ok');
       if (checked?.ok) return await this.completed(task, workDir, checked.data, res, sessionId);
 
       const error = res.status === 'ok' ? `Output tidak valid setelah repair: ${checked && !checked.ok ? checked.error : ''}` : res.error ?? res.status;
@@ -384,7 +440,7 @@ export class Worker {
       // Rate limit bukan kegagalan task: attempt dikembalikan.
       await tx
         .update(tasks)
-        .set({ status: 'queued', attempt: Math.max(0, task.attempt - 1), notBefore: until, leaseUntil: null, error: res.error ?? 'rate limited' })
+        .set({ status: 'queued', queuedAt: new Date(), attempt: Math.max(0, task.attempt - 1), notBefore: until, leaseUntil: null, error: res.error ?? 'rate limited' })
         .where(eq(tasks.id, task.id));
       emit({ type: 'runtime.rate_limited', entityType: 'runtime', entityId: runtimeId, actor: 'orchestrator', payload: { until: until.toISOString() } });
       emit({ type: 'task.deferred', entityType: 'task', entityId: task.id, objectiveId: task.objectiveId, actor: 'orchestrator', payload: { until: until.toISOString() } });
@@ -397,7 +453,7 @@ export class Worker {
       Task.assert('running', 'queued');
       await tx
         .update(tasks)
-        .set({ status: 'queued', attempt: Math.max(0, task.attempt - 1), notBefore, leaseUntil: null, error: 'Budget objective habis' })
+        .set({ status: 'queued', queuedAt: new Date(), attempt: Math.max(0, task.attempt - 1), notBefore, leaseUntil: null, error: 'Budget objective habis' })
         .where(eq(tasks.id, task.id));
       emit({ type: 'budget.exceeded', entityType: 'objective', entityId: task.objectiveId, objectiveId: task.objectiveId, actor: 'orchestrator', payload: { spentUsdMicros: spent, budgetUsdMicros: budget } });
     });
@@ -454,7 +510,7 @@ export class Worker {
     if (task.attempt < task.maxAttempts) {
       Task.assert('running', 'queued');
       const notBefore = new Date(Date.now() + this.retryBackoffMs * task.attempt);
-      await tx.update(tasks).set({ status: 'queued', error, leaseUntil: null, notBefore }).where(eq(tasks.id, task.id));
+      await tx.update(tasks).set({ status: 'queued', queuedAt: new Date(), error, leaseUntil: null, notBefore }).where(eq(tasks.id, task.id));
       emit({ type: 'task.retry_scheduled', entityType: 'task', entityId: task.id, objectiveId: task.objectiveId, actor: 'orchestrator', payload: { attempt: task.attempt, error, notBefore: notBefore.toISOString() } });
     } else {
       Task.assert('running', 'failed');

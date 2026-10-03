@@ -12,12 +12,12 @@ import { FakeRuntime, type FakeHandler } from '../src/runtimes/fake';
 import { SecretBox } from '../src/secrets';
 import { TEST_DB } from './global-setup';
 
-export async function setupOffice(handler?: FakeHandler, opts: { maxRunsPerWindow?: number } = {}) {
+export async function setupOffice(handler?: FakeHandler, opts: { maxRunsPerWindow?: number; concurrency?: number } = {}) {
   const { db, close } = createDb(TEST_DB);
   // FOREIGN_KEY_CHECKS bersifat per sesi: jalankan di satu koneksi lewat transaksi.
   await db.transaction(async (tx) => {
     await tx.execute(sql`set foreign_key_checks = 0`);
-    for (const t of ['events', 'artifacts', 'agent_sessions', 'task_dependencies', 'tasks', 'projects', 'decisions', 'objectives', 'agents', 'roles', 'settings', 'providers', 'knowledge', 'approvals', 'tool_executions', 'tool_credentials', 'schedules']) {
+    for (const t of ['events', 'artifacts', 'agent_sessions', 'task_dependencies', 'tasks', 'projects', 'decisions', 'objectives', 'agents', 'roles', 'settings', 'providers', 'knowledge', 'approvals', 'tool_executions', 'tool_credentials', 'schedules', 'departments']) {
       await tx.execute(sql.raw(`delete from ${t}`));
     }
     await tx.execute(sql`set foreign_key_checks = 1`);
@@ -32,7 +32,7 @@ export async function setupOffice(handler?: FakeHandler, opts: { maxRunsPerWindo
     workspacesDir: await mkdtemp(path.join(os.tmpdir(), 'vo-test-')),
     defaultModel: 'sonnet',
     runtimes: new Map([['fake', runtime]]),
-    limits: new Map([['fake', { concurrency: 1, costKind: 'actual', maxRunsPerWindow: opts.maxRunsPerWindow, windowHours: opts.maxRunsPerWindow ? 5 : undefined }]]),
+    limits: new Map([['fake', { concurrency: opts.concurrency ?? 1, costKind: 'actual', maxRunsPerWindow: opts.maxRunsPerWindow, windowHours: opts.maxRunsPerWindow ? 5 : undefined }]]),
     forceRuntime: 'fake',
     secrets: new SecretBox(randomBytes(32).toString('hex')),
   };

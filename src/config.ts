@@ -27,7 +27,8 @@ export const config = {
   claudeCli: {
     bin: str('CLAUDE_CLI_BIN', 'claude'),
     configDir: process.env.CLAUDE_CONFIG_DIR || undefined,
-    concurrency: int('CLAUDE_CLI_CONCURRENCY', 1),
+    // Paralel secukupnya: turun sendiri saat kena rate limit (lihat Worker.adjustCap).
+    concurrency: int('CLAUDE_CLI_CONCURRENCY', 3),
     maxRunsPerWindow: int('CLAUDE_CLI_MAX_RUNS_PER_WINDOW', 10),
     windowHours: int('CLAUDE_CLI_WINDOW_HOURS', 5),
     billing: str('CLAUDE_CLI_BILLING', 'subscription') === 'api' ? ('actual' as const) : ('estimate' as const),

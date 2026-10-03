@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { TaskKind } from '../domain';
 import type { Capability } from '../runtimes/runtime';
 import { KNOWLEDGE_CATEGORIES } from '../orchestrator/knowledge';
-import { CONSULTABLE_ROLES, PLANNABLE_ROLES, ROLES } from './roles';
+import { CONSULTABLE_ROLES } from './roles';
 
 const ArtifactRef = z.strictObject({
   path: z.string().describe('Path relatif, diawali out/'),
@@ -41,8 +41,6 @@ export const ResearchOutput = z.strictObject({
   assumptions: z.array(z.string()).optional(),
 });
 
-const roleIds = Object.keys(PLANNABLE_ROLES) as [string, ...string[]];
-
 /** Output task `planning` (Manager): rencana task dengan dependency. */
 export const PlanOutput = z.strictObject({
   summary: z.string().min(1).describe('Ringkasan pendekatan'),
@@ -51,7 +49,7 @@ export const PlanOutput = z.strictObject({
       z.strictObject({
         key: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/).describe('ID singkat: huruf kecil, angka, tanda hubung'),
         title: z.string().min(3).max(200),
-        role: z.enum(roleIds),
+        role: z.string().regex(/^[a-z0-9_]{2,64}$/).describe('id role dari daftar yang tersedia'),
         instructions: z.string().min(10),
         depends_on: z.array(z.string()).describe('Key task yang harus selesai lebih dulu'),
       }),
@@ -92,8 +90,6 @@ export const ConsultationOutput = z.strictObject({
   alternatives: z.array(z.string()).describe('Alternatif yang lebih feasible, wajib minimal satu'),
 });
 
-const roleIdsAll = ROLES.filter((r) => r.id !== 'ceo').map((r) => r.id) as [string, ...string[]];
-
 /** Output task `decision` (CEO): usulan keputusan yang menunggu persetujuan Owner. */
 export const DecisionOutput = z.strictObject({
   strategy: z.string().min(1),
@@ -102,7 +98,7 @@ export const DecisionOutput = z.strictObject({
   team: z
     .array(
       z.strictObject({
-        role: z.enum(roleIdsAll).describe('Hanya role yang sudah ada'),
+        role: z.string().min(2).describe('Hanya role yang sudah ada'),
         runtime: z.enum(['claude-cli', 'openrouter']),
         reason: z.string().min(1),
       }),
@@ -132,7 +128,16 @@ export function checkFraming(f: Framing): string | null {
 }
 
 /** Validasi semantik setelah schema lolos. Mengembalikan pesan error, atau null. */
-export function checkPlan(plan: Plan): string | null {
+export interface CheckContext {
+  /** id role yang boleh dipakai dalam rencana (dari database). */
+  plannable: string[];
+}
+
+export function checkPlan(plan: Plan, _input: unknown, ctx?: CheckContext): string | null {
+  if (ctx) {
+    const bad = plan.tasks.find((t) => !ctx.plannable.includes(t.role));
+    if (bad) return `Role ${bad.role} tidak tersedia. Pilih dari: ${ctx.plannable.join(', ')}`;
+  }
   const keys = new Set<string>();
   for (const t of plan.tasks) {
     if (keys.has(t.key)) return `Key task duplikat: ${t.key}`;
@@ -179,7 +184,7 @@ interface KindSpec {
   schema: z.ZodType;
   requires: Capability[];
   timeoutMs: number;
-  check?: (data: any, input: unknown) => string | null;
+  check?: (data: any, input: unknown, ctx?: CheckContext) => string | null;
 }
 
 export const TASK_KINDS: Partial<Record<TaskKind, KindSpec>> = {

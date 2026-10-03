@@ -13,6 +13,7 @@ export interface OfficeAgent {
   status: string;
   supervisorAgentId: string | null;
   workspacePath: string;
+  isHead: boolean;
   activity: Activity;
   line: string;
   task: {
@@ -30,6 +31,7 @@ export interface RuntimeInfo {
   id: string;
   configured: boolean;
   concurrency: number;
+  maxConcurrency: number;
   inflight: number;
   quota: { used: number; max: number; windowHours: number } | null;
   cooldownUntil: string | null;
@@ -70,8 +72,15 @@ export interface Schedule extends ScheduleInput {
   lastRunAt: string | null;
 }
 
+export interface Department {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface OfficeView {
   forceRuntime: string | null;
+  departments: Department[];
   nextRun: { objectiveId: string; title: string; at: string } | null;
   meeting: { objectiveId: string; title: string; participants: string[] } | null;
   agents: OfficeAgent[];
@@ -238,6 +247,43 @@ export interface KnowledgeItem {
 export interface Settings {
   decision_approval: 'always' | 'auto';
   usd_to_idr: number;
+  max_staff_per_role: number;
+  auto_hire: 'auto' | 'ask';
+  hire_wait_seconds: number;
+}
+
+export interface OrgRole {
+  id: string;
+  name: string;
+  nativeTools: string;
+  plannable: boolean;
+  taskKind: string | null;
+  createdBy: string;
+  staff: number;
+}
+
+export interface OrgDepartment extends Department {
+  createdBy: string;
+  staff: number;
+  roles: OrgRole[];
+}
+
+export interface Org {
+  limits: { maxStaffPerRole: number; autoHire: 'auto' | 'ask'; hireWaitSeconds: number };
+  departments: OrgDepartment[];
+}
+
+export interface OrgChange {
+  type: 'hire' | 'new_department' | 'new_role';
+  reason?: string;
+  role_id?: string;
+  runtime?: 'claude-cli' | 'openrouter';
+  name?: string;
+  department_id?: string;
+  instructions?: string;
+  native_tools?: 'read_only' | 'workspace_write' | 'research';
+  task_kind?: 'work' | 'research';
+  description?: string;
 }
 
 export interface DecisionSummary {
@@ -306,6 +352,8 @@ export const api = {
     request<KnowledgeItem[]>(`/api/knowledge?${new URLSearchParams({ ...(q ? { q } : {}), ...(category ? { category } : {}) })}`),
   deleteKnowledge: (id: string) => request<{ ok: boolean }>(`/api/knowledge/${id}`, { method: 'DELETE' }),
   stats: (days: number) => request<UsageStats>(`/api/stats?days=${days}`),
+  org: () => request<Org>('/api/org'),
+  applyOrg: (body: OrgChange) => request<Org>('/api/org', { method: 'POST', body: JSON.stringify(body) }),
   settings: () => request<Settings>('/api/settings'),
   decideApproval: (id: string, action: 'approve' | 'reject', note?: string) =>
     request<{ ok: boolean; message?: string }>(`/api/approvals/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) }),

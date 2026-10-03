@@ -8,6 +8,12 @@ export const SETTING_DEFAULTS = {
   decision_approval: 'always' as 'always' | 'auto',
   /** Kurs untuk menampilkan biaya dalam Rupiah. */
   usd_to_idr: 16000,
+  /** Aturan HRD: batas staf aktif per role. Di atas batas, penambahan butuh persetujuan Owner. */
+  max_staff_per_role: 3,
+  /** auto: HRD merekrut sendiri selama di bawah batas. ask: selalu minta persetujuan Owner. */
+  auto_hire: 'auto' as 'auto' | 'ask',
+  /** Task siap kerja yang menunggu lebih lama dari ini (detik) memicu pertimbangan menambah staf. */
+  hire_wait_seconds: 90,
 };
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 

@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  DEPARTMENTS,
   INITIAL_AGENTS,
   MAX_REVISION_ROUNDS,
-  PLANNABLE_ROLES,
   ROLES,
   planningInstructions,
   reviewInstructions,
@@ -11,10 +11,11 @@ import {
 } from '../agents/roles';
 import { kindSpec, topoOrder, type DecisionProposal, type Framing, type Plan, type Review } from '../agents/schemas';
 import type { Tx } from '../db/client';
-import { agents, decisions, objectives, projects, roles, schedules, taskDependencies, tasks } from '../db/schema';
+import { agents, decisions, departments, objectives, projects, roles, schedules, taskDependencies, tasks } from '../db/schema';
 import { Objective, Project, type Actor, type ObjectiveStatus, type ProjectStatus, type TaskKind, type TaskStatus } from '../domain';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
 import { type KnowledgeInput, upsertKnowledge } from './knowledge';
+import { loadPlannableRoles } from './org';
 import { onDecisionCompleted, onFramingCompleted, onStrategicTaskFinished, startStrategicLoop } from './strategy';
 
 type TaskRow = typeof tasks.$inferSelect;
@@ -22,11 +23,18 @@ type TaskRow = typeof tasks.$inferSelect;
 /** Isi role dan karyawan awal. Idempotent. */
 export async function seedOrganization(ctx: OfficeContext) {
   await withTx(ctx, async (tx, emit) => {
-    for (const r of ROLES) {
+    // Divisi bawaan hanya dibuat jika belum ada; perubahan Owner tidak ditimpa.
+    for (const [i, d] of DEPARTMENTS.entries()) {
+      await tx.insert(departments).values({ ...d, sortOrder: i }).onDuplicateKeyUpdate({ set: { id: d.id } });
+    }
+    for (const { plannable, ...r } of ROLES) {
+      const row = { ...r, plannable: !!plannable, taskKind: plannable?.kind ?? null, description: plannable?.description ?? null };
       await tx
         .insert(roles)
-        .values(r)
-        .onDuplicateKeyUpdate({ set: { name: r.name, department: r.department, instructions: r.instructions, nativeTools: r.nativeTools } });
+        .values(row)
+        .onDuplicateKeyUpdate({
+          set: { name: r.name, department: r.department, instructions: r.instructions, nativeTools: r.nativeTools, plannable: row.plannable, taskKind: row.taskKind, description: row.description },
+        });
     }
     const existing = await tx.select({ id: agents.id }).from(agents).limit(1);
     if (existing.length > 0) return;
@@ -144,7 +152,7 @@ export async function promoteReadyTasks(ctx: OfficeContext, tx: Tx, emit: Emit, 
       }
       continue;
     }
-    await tx.update(tasks).set({ status: 'queued', assignedAgentId: agentId, error: null }).where(eq(tasks.id, t.id));
+    await tx.update(tasks).set({ status: 'queued', queuedAt: new Date(), assignedAgentId: agentId, error: null }).where(eq(tasks.id, t.id));
     emit({ type: 'task.assigned', entityType: 'task', entityId: t.id, objectiveId: t.objectiveId, actor: 'orchestrator', payload: { agentId, title: t.title } });
   }
 }
@@ -207,7 +215,7 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
             roleId: 'content_writer', planKey: 'main', requestedBy: 'owner',
           })
         : await insertTask(tx, emit, {
-            objectiveId, projectId, kind: 'planning', title: `Rencana: ${input.title}`, instructions: planningInstructions(),
+            objectiveId, projectId, kind: 'planning', title: `Rencana: ${input.title}`, instructions: planningInstructions(await loadPlannableRoles(tx)),
             roleId: 'manager', planKey: 'plan', requestedBy: 'owner',
           });
     await promoteReadyTasks(ctx, tx, emit, objectiveId);
@@ -277,12 +285,15 @@ export async function createPlanTasks(
 ) {
   const ordered = topoOrder(plan);
   if (!ordered) throw new Error('Rencana tidak valid (siklus) lolos validasi');
+  const kindOf = new Map((await loadPlannableRoles(tx)).map((r) => [r.id, r.kind]));
   const idByKey = new Map<string, string>();
   for (const t of ordered) {
+    const kind = kindOf.get(t.role);
+    if (!kind) throw new Error(`Role ${t.role} tidak lagi tersedia untuk rencana`);
     const id = await insertTask(tx, emit, {
       objectiveId: target.objectiveId,
       projectId: target.projectId,
-      kind: PLANNABLE_ROLES[t.role]!.kind,
+      kind,
       title: t.title,
       instructions: t.instructions,
       roleId: t.role,

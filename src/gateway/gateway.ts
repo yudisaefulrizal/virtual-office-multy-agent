@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { approvals, toolCredentials, toolExecutions } from '../db/schema';
 import { UserError } from '../domain';
 import { type OfficeContext, withTx } from '../orchestrator/context';
-import { type Caller, ROLE_TOOLS, toolById } from './tools';
+import { type Caller, allowedToolIds, toolById } from './tools';
 
 const TOKEN_TTL_MS = 2 * 3600_000;
 
@@ -60,7 +60,7 @@ export class Gateway {
     };
     const actor = `agent:${caller.agentId}` as const;
 
-    if (!tool || !(ROLE_TOOLS[caller.roleId] ?? []).includes(toolId)) {
+    if (!tool || !allowedToolIds(caller.roleId).includes(toolId)) {
       await withTx(ctx, async (tx, emit) => {
         await tx.insert(toolExecutions).values({ ...base, args: (rawArgs ?? {}) as object, status: 'denied', error: 'Tidak diizinkan untuk role ini', finishedAt: new Date() });
         emit({ type: 'tool.denied', entityType: 'tool_execution', entityId: base.id, objectiveId: caller.objectiveId, actor, payload: { toolId, roleId: caller.roleId } });
@@ -133,6 +133,22 @@ export class Gateway {
       });
       return { ok: false, message: `Tool gagal: ${error}` };
     }
+  }
+
+  /**
+   * Permintaan persetujuan dari sistem sendiri (mis. aturan HRD menambah staf melewati batas).
+   * Alurnya sama dengan tool berisiko tinggi: Owner menyetujui, lalu sistem mengeksekusi.
+   */
+  async systemRequest(toolId: string, args: Record<string, unknown>, reason: string, objectiveId: string | null = null) {
+    const tool = toolById(toolId);
+    if (!tool || tool.risk !== 'high') throw new UserError('Hanya tool berisiko tinggi yang bisa diminta lewat persetujuan');
+    const approvalId = randomUUID();
+    await withTx(this.ctx, async (tx, emit) => {
+      await tx.insert(approvals).values({ id: approvalId, kind: 'tool', status: 'pending', objectiveId, toolId, args, reason });
+      await tx.insert(toolExecutions).values({ id: randomUUID(), toolId, approvalId, objectiveId, args, status: 'pending_approval' });
+      emit({ type: 'approval.requested', entityType: 'approval', entityId: approvalId, objectiveId, actor: 'orchestrator', payload: { toolId, title: tool.title } });
+    });
+    return approvalId;
   }
 
   /** Owner menyetujui: sistem (bukan agent) yang mengeksekusi dengan credential tersimpan. */
