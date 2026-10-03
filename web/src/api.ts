@@ -235,6 +235,34 @@ export interface AgentRow {
   runtime: string;
   model: string | null;
   status: string;
+  tenure: string;
+}
+
+export interface AgentPerformance {
+  agentId: string;
+  name: string;
+  roleId: string;
+  roleName: string;
+  status: string;
+  tenure: string;
+  runtime: string;
+  model: string | null;
+  tasksDone: number;
+  tasksFailed: number;
+  revised: number;
+  retried: number;
+  avgDurationMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  costUsdMicros: number;
+  costKind: string | null;
+  utilization: number;
+  lastActiveAt: string | null;
+}
+
+export interface Performance {
+  agents: AgentPerformance[];
+  recommendations: { agentId: string | null; roleId: string | null; level: 'info' | 'warn'; text: string }[];
 }
 
 export type ObjectiveMode = 'strategic' | 'planned' | 'direct';
@@ -281,6 +309,7 @@ export interface Settings {
   max_staff_per_role: number;
   auto_hire: 'auto' | 'ask';
   hire_wait_seconds: number;
+  suspend_idle_minutes: number;
   claude_max_runs_per_window: number;
   quota_counted_since: string;
 }
@@ -405,6 +434,9 @@ export const api = {
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>
     request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   agents: () => request<AgentRow[]>('/api/agents'),
+  performance: () => request<Performance>('/api/performance'),
+  agentLifecycle: (id: string, action: 'suspend' | 'reactivate' | 'retire') =>
+    request<{ ok?: boolean }>(`/api/agents/${id}/lifecycle`, { method: 'POST', body: JSON.stringify({ action }) }),
   updateAgent: (id: string, body: { runtime?: string; model?: string | null; status?: string }) =>
     request<{ ok: boolean }>(`/api/agents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 };

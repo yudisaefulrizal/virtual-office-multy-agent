@@ -9,7 +9,8 @@ import { agentSessions, agents, artifacts, knowledge, roles } from '../../db/sch
 import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator/context';
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { applyOrgChange, listOrg } from '../../orchestrator/org';
-import { createObjective } from '../../orchestrator/office';
+import { createObjective, promoteAllObjectives } from '../../orchestrator/office';
+import { agentPerformance, changeAgentLifecycle } from '../../orchestrator/workforce';
 import { deleteObjective } from '../../orchestrator/cleanup';
 import { displayName, listResults, objectiveZip, readWorkspaceFile as readArtifactFile, safeName } from '../../orchestrator/results';
 import { setObjectiveBudget } from '../../orchestrator/budget';
@@ -208,6 +209,17 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
 
   app.get('/api/settings', () => getAllSettings(ctx.db));
 
+  // Siklus hidup agent oleh Owner: rumahkan, aktifkan kembali, atau pensiunkan (arsip).
+  app.post('/api/agents/:id/lifecycle', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const { action } = z.object({ action: z.enum(['suspend', 'reactivate', 'retire']) }).parse(req.body);
+    const out = await changeAgentLifecycle(ctx, id, action, 'owner', 'Keputusan Owner', () => promoteAllObjectives(ctx));
+    void worker.tick();
+    return out;
+  });
+
+  app.get('/api/performance', () => agentPerformance(ctx));
+
   // Mulai hitung kuota dari nol (mis. jendela Claude sebenarnya sudah pulih).
   app.post('/api/quota/reset', async () => {
     await withTx(ctx, async (tx, emit) => {
@@ -231,6 +243,7 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
         max_staff_per_role: z.number().int().min(1).max(20).optional(),
         auto_hire: z.enum(['auto', 'ask']).optional(),
         hire_wait_seconds: z.number().int().min(10).max(3600).optional(),
+        suspend_idle_minutes: z.number().int().min(0).max(1440).optional(),
         claude_max_runs_per_window: z.number().int().min(-1).max(1000).optional(),
       })
       .parse(req.body);

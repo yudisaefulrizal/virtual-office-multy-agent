@@ -17,6 +17,7 @@ Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasi
 | Tool Gateway | MCP milik Virtual Office: izin per role, tool berisiko menunggu persetujuan Owner, credential terenkripsi |
 | Budget | Batas biaya API nyata per objective; lewat batas → task ditunda |
 | Scheduler | Objective berulang (harian/interval) tanpa mengulang strategi dan perencanaan |
+| Tenaga kerja adaptif | Agent bisa dirumahkan, diaktifkan kembali, atau dipensiunkan (arsip); tenure permanent/on-demand/sementara; HRD memakai ulang staf dirumahkan sebelum merekrut baru dan merumahkan staf berlebih yang menganggur; halaman Pengaturan menampilkan performa dan saran HRD |
 | Pembersihan | Objective yang sudah selesai/gagal/dibatalkan bisa dihapus dari halamannya (task, sesi, hasil, dan folder kerja ikut terhapus; knowledge tetap) |
 | Hasil kerja | Halaman **Hasil**: hasil akhir tiap objective (bahan riset/antara dilipat sebagai pendukung), dilihat langsung (Markdown, HTML aman, gambar, JSON, CSV) atau diunduh per file / ZIP hasil akhir |
 | Observability | Ringkasan biaya (Rupiah/USD), sesi, token per hari, agent, objective, runtime |

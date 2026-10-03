@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, notInArray } from 'drizzle-orm';
 import {
   CONSULTABLE_ROLES,
   ROLES,
@@ -17,6 +17,7 @@ import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './conte
 import { insertTask, promoteReadyTasks } from './office';
 import { hireAgent, loadPlannableRoles } from './org';
 import { getSetting } from './settings';
+import { GONE } from './workforce';
 
 type TaskRow = typeof tasks.$inferSelect;
 
@@ -159,7 +160,7 @@ async function approveTx(ctx: OfficeContext, tx: Tx, emit: Emit, decisionId: str
     const [role] = await tx.select().from(roles).where(eq(roles.id, member.role));
     if (!role) continue;
     const runtime = member.runtime as RuntimeId;
-    const existing = await tx.select().from(agents).where(and(eq(agents.roleId, role.id), ne(agents.status, 'inactive')));
+    const existing = await tx.select().from(agents).where(and(eq(agents.roleId, role.id), notInArray(agents.status, [...GONE])));
     if (existing.length === 0) {
       await hireAgent(ctx, tx, emit, { roleId: role.id, runtime, actor, createdBy: `decision:${d.id}`, reason: member.reason, objectiveId: d.objectiveId });
     } else {

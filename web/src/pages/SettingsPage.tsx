@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, useLive, type AgentRow, type ProviderInfo, type ToolInfo } from '../api';
 import { OrgSection } from './OrgSection';
+import { PerformanceSection } from './PerformanceSection';
 
 function QuotaRules() {
   const { data, refresh } = useLive(api.settings);
@@ -45,6 +46,7 @@ export function SettingsPage() {
       <section className="main">
         <QuotaRules />
         <OrgSection />
+        <PerformanceSection />
         <section className="card" aria-labelledby="team">
           <h2 id="team">Karyawan</h2>
           <p className="small muted" style={{ margin: 0 }}>
@@ -102,7 +104,8 @@ export function SettingsPage() {
   );
 }
 
-const STATUS_LABEL: Record<string, string> = { active: 'Aktif', inactive: 'Nonaktif', waiting_provider: 'Menunggu provider' };
+const STATUS_LABEL: Record<string, string> = { active: 'Aktif', inactive: 'Dirumahkan', retired: 'Pensiun (arsip)', waiting_provider: 'Menunggu provider' };
+const TENURE_LABEL: Record<string, string> = { permanent: 'Permanen', on_demand: 'On-demand', temporary: 'Sementara' };
 
 function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers: ProviderInfo[]; onSaved: () => void }) {
   const [runtime, setRuntime] = useState(agent.runtime);
@@ -112,11 +115,12 @@ function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers
   const dirty = runtime !== agent.runtime || model !== (agent.model ?? '');
   const orConfigured = providers.find((p) => p.id === 'openrouter')?.configured;
 
-  const save = async (status?: string) => {
+  const save = async (lifecycle?: 'suspend' | 'reactivate' | 'retire') => {
     setBusy(true);
     setError(null);
     try {
-      await api.updateAgent(agent.id, { runtime, model: model.trim() || null, ...(status ? { status } : {}) });
+      if (lifecycle) await api.agentLifecycle(agent.id, lifecycle);
+      else await api.updateAgent(agent.id, { runtime, model: model.trim() || null });
       onSaved();
     } catch (e) {
       setError((e as Error).message);
@@ -129,7 +133,7 @@ function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers
     <tr>
       <td>
         <strong>{agent.name}</strong>
-        <div className="small muted">{agent.roleName}</div>
+        <div className="small muted">{agent.roleName} · {TENURE_LABEL[agent.tenure] ?? agent.tenure}</div>
         {error && <div className="error">{error}</div>}
       </td>
       <td>
@@ -147,9 +151,21 @@ function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers
       <td>
         <div className="row">
           <button type="button" className="btn btn-ghost" disabled={!dirty || busy} onClick={() => save()}>Simpan</button>
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => save(agent.status === 'inactive' ? 'active' : 'inactive')}>
-            {agent.status === 'inactive' ? 'Aktifkan' : 'Nonaktifkan'}
-          </button>
+          {agent.status === 'inactive' || agent.status === 'retired' ? (
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => save('reactivate')}>Aktifkan kembali</button>
+          ) : (
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => save('suspend')}>Rumahkan</button>
+          )}
+          {agent.status !== 'retired' && (
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={busy}
+              onClick={() => window.confirm(`Pensiunkan ${agent.name}? Agent diarsipkan dan hilang dari kantor; riwayatnya tetap tersimpan dan bisa diaktifkan kembali.`) && save('retire')}
+            >
+              Pensiunkan
+            </button>
+          )}
         </div>
       </td>
     </tr>

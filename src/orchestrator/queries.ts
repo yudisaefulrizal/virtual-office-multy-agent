@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { agentSessions, agents, approvals, departments, schedules, artifacts, decisions, events, objectives, projects, roles, taskDependencies, tasks, toolCredentials, toolExecutions } from '../db/schema';
 import { ROLE_TOOLS, TOOLS, toolById } from '../gateway/tools';
 import { spentUsdMicros } from './budget';
@@ -33,6 +33,7 @@ export async function officeView(
     .select({ agent: agents, role: roles })
     .from(agents)
     .innerJoin(roles, eq(roles.id, agents.roleId))
+    .where(ne(agents.status, 'retired'))
     .orderBy(asc(agents.createdAt));
 
   const openTasks = await db
@@ -58,7 +59,7 @@ export async function officeView(
     let task: { id: string; title: string; status: string; startedAt: string | null; attempt: number; maxAttempts: number; sessionId: string | null } | null = null;
     if (agent.status !== 'active') {
       activity = 'inactive';
-      line = ctx.runtimes.has(agent.runtime as RuntimeId) ? 'Nonaktif' : `Menunggu provider ${agent.runtime}`;
+      line = ctx.runtimes.has(agent.runtime as RuntimeId) ? 'Dirumahkan (bisa dipakai kembali)' : `Menunggu provider ${agent.runtime}`;
     } else if (running) {
       activity = 'working';
       line = running.title;
@@ -103,7 +104,7 @@ export async function officeView(
   const headOf = new Map<string, string>();
   const byAge = [...agentsOut].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime());
   for (const a of byAge) if (a.status === 'active' && !headOf.has(a.department)) headOf.set(a.department, a.id);
-  for (const a of byAge) if (a.status !== 'inactive' && !headOf.has(a.department)) headOf.set(a.department, a.id);
+  for (const a of byAge) if (a.status === 'active' && !headOf.has(a.department)) headOf.set(a.department, a.id);
   const agentsView = agentsOut.map(({ createdAt: _c, ...a }) => ({ ...a, isHead: headOf.get(a.department) === a.id }));
   const departmentRows = await db.select().from(departments).orderBy(asc(departments.sortOrder), asc(departments.id));
 

@@ -36,7 +36,7 @@ async function credentialFor(ctx: OfficeContext, toolId: string) {
 }
 
 const OrgChangeShape = {
-  type: z.enum(['hire', 'new_department', 'new_role']).describe('hire: tambah staf dari role yang ada; new_department: ruangan/divisi baru; new_role: role baru (otomatis merekrut satu staf)'),
+  type: z.enum(['hire', 'new_department', 'new_role', 'suspend', 'reactivate', 'retire']).describe('hire: tambah staf dari role yang ada (staf dirumahkan dipakai ulang lebih dulu); new_department: ruangan/divisi baru; new_role: role baru (otomatis merekrut satu staf); suspend: rumahkan agent (bisa dipakai kembali); reactivate: aktifkan kembali; retire: arsipkan agent yang tidak lagi diperlukan'),
   reason: z.string().min(3).max(500).describe('Alasan berbasis data, mis. antrean atau beban kerja'),
   role_id: z.string().max(64).optional().describe('hire: id role yang sudah ada'),
   runtime: z.enum(['claude-cli', 'openrouter']).optional(),
@@ -47,6 +47,9 @@ const OrgChangeShape = {
   native_tools: z.enum(['read_only', 'workspace_write', 'research']).optional(),
   task_kind: z.enum(['work', 'research']).optional().describe('new_role: isi bila Manager boleh memakai role ini dalam rencana'),
   description: z.string().max(300).optional().describe('new_role: satu kalimat kemampuan role untuk daftar Manager'),
+  tenure: z.enum(['permanent', 'on_demand', 'temporary']).optional().describe('hire: permanent (fungsi inti), on_demand (hidup hanya saat ada kerja), temporary (untuk satu objective)'),
+  objective_id: z.string().max(36).optional().describe('hire temporary: id objective yang dilayani'),
+  agent_id: z.string().max(36).optional().describe('suspend/reactivate/retire: id agent'),
 };
 
 export const TOOLS: ToolDef[] = [
@@ -54,7 +57,7 @@ export const TOOLS: ToolDef[] = [
     id: 'propose_org_change',
     title: 'Usulkan perubahan organisasi',
     description:
-      'Usulkan staf tambahan, divisi (ruangan) baru, atau role baru. Tidak langsung berlaku: Owner harus menyetujui. Role baru hanya mendapat tool berisiko rendah.',
+      'Usulkan staf tambahan (permanen, on-demand, atau sementara), merumahkan/mengaktifkan kembali/mengarsipkan agent, divisi (ruangan) baru, atau role baru. Tidak langsung berlaku: Owner harus menyetujui. Role baru hanya mendapat tool berisiko rendah.',
     risk: 'high',
     input: OrgChangeShape,
     async execute(ctx, args) {

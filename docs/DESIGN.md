@@ -788,3 +788,16 @@ Owner butuh satu tempat untuk melihat dan mengunduh hasil, tanpa membuka trace o
 - UI: daftar di kiri, pratinjau di kanan. Markdown dirender menjadi elemen React (tanpa innerHTML, tautan hanya http/mailto); HTML ditampilkan di iframe `sandbox=""` (tanpa skrip); SVG lewat `<img>`; tipe lain hanya unduh.
 
 Penegasan: yang utama adalah **hasil akhir**. Hasil akhir = task `work`/`research` yang tidak menjadi bahan (dependency) task work/research lain; riset dan keluaran antara ditandai pendukung dan dilipat. ZIP bawaan hanya hasil akhir; `?semua=1` menambahkan `bahan-pendukung/`.
+
+## 16. HRD: tenaga kerja adaptif (2026-10-03)
+
+HRD adalah controller tenaga kerja, bukan daftar agent. Yang sudah diterapkan:
+
+- **Siklus hidup**: `active` ⇄ `inactive` (dirumahkan; identitas, riwayat, konfigurasi tetap) → `retired` (arsip; hilang dari kantor, riwayat tetap, bisa diaktifkan kembali secara eksplisit). `waiting_provider` untuk agent yang runtime-nya belum siap. Semua perubahan lewat `setLifecycle` dan tercatat sebagai event `agent.suspended/reactivated/retired`.
+- **Tenure**: `permanent` (fungsi inti), `on_demand` (hidup hanya saat ada kerja), `temporary` (untuk satu objective; dirumahkan otomatis saat objective selesai).
+- **Scale up**: aturan staffing lama (antrean menunggu + semua staf sibuk + slot ada). Sumber agent berurutan: **pakai ulang staf dirumahkan** dulu, baru buat baru. Role yang semua stafnya dirumahkan dan punya task siap dibangunkan segera.
+- **Scale down** (`reviewDownsizing`): staf tambahan yang menganggur melebihi `suspend_idle_minutes` (default 30, 0 = mati) dirumahkan bila role itu tidak punya antrean. Staf tertua tiap role tetap aktif sehingga fungsi organisasi selalu terpenuhi. Tidak ada yang dihapus.
+- **Performa & saran** (`agentPerformance`, `/api/performance`): task selesai/gagal, hasil yang direvisi (proksi kualitas), retry, durasi, token, biaya, utilisasi 7 hari. Saran deterministik: tingkat gagal/revisi tinggi, agent sesama role dengan kualitas setara tetapi biaya >1,5x.
+- **HRD agent** memakai `propose_org_change` untuk `hire` (+`tenure`, `objective_id`), `suspend`, `reactivate`, `retire`; semuanya menunggu persetujuan Owner. Owner mengatur langsung di Pengaturan.
+
+Belum diterapkan: memindahkan agent antar divisi, menggabung/memecah role otomatis, sumber agent eksternal (marketplace), skill/capability per agent, dan penggantian model otomatis (saat ini hanya saran).

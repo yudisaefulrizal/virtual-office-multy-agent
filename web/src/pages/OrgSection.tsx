@@ -144,11 +144,12 @@ function HiringRules({ limits, onSaved }: { limits: Settings; onSaved: () => voi
   const [max, setMax] = useState(limits.max_staff_per_role);
   const [wait, setWait] = useState(limits.hire_wait_seconds);
   const [mode, setMode] = useState(limits.auto_hire);
+  const [idle, setIdle] = useState(limits.suspend_idle_minutes);
   const [busy, setBusy] = useState(false);
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    await api.updateSettings({ max_staff_per_role: max, hire_wait_seconds: wait, auto_hire: mode }).catch(() => undefined);
+    await api.updateSettings({ max_staff_per_role: max, hire_wait_seconds: wait, auto_hire: mode, suspend_idle_minutes: idle }).catch(() => undefined);
     setBusy(false);
     onSaved();
   };
@@ -169,6 +170,8 @@ function HiringRules({ limits, onSaved }: { limits: Settings; onSaved: () => voi
         <input id="hr-max" type="number" min={1} max={20} value={max} onChange={(e) => setMax(Number(e.target.value))} style={{ width: 80 }} />
         <label htmlFor="hr-wait" className="small">Menunggu lebih dari (detik)</label>
         <input id="hr-wait" type="number" min={10} max={3600} value={wait} onChange={(e) => setWait(Number(e.target.value))} style={{ width: 100 }} />
+        <label htmlFor="hr-idle" className="small">Rumahkan staf tambahan setelah menganggur (menit, 0 = tidak otomatis)</label>
+        <input id="hr-idle" type="number" min={0} max={1440} value={idle} onChange={(e) => setIdle(Number(e.target.value))} style={{ width: 90 }} />
         <button type="submit" className="btn btn-ghost" disabled={busy}>Simpan aturan</button>
       </div>
     </form>

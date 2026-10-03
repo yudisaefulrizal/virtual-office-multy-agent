@@ -7,6 +7,7 @@ import { UserError, type Actor } from '../domain';
 import type { RuntimeId } from '../runtimes/runtime';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
 import { getAllSettings } from './settings';
+import { findReusable, isGone, setLifecycle } from './workforce';
 
 export type RoleRow = typeof roles.$inferSelect;
 
@@ -47,12 +48,32 @@ export async function hireAgent(
   ctx: OfficeContext,
   tx: Tx,
   emit: Emit,
-  input: { roleId: string; runtime?: RuntimeId; actor: Actor; createdBy: string; reason: string; objectiveId?: string | null },
+  input: {
+    roleId: string;
+    runtime?: RuntimeId;
+    actor: Actor;
+    createdBy: string;
+    reason: string;
+    objectiveId?: string | null;
+    tenure?: 'permanent' | 'on_demand' | 'temporary';
+    /** Tenure temporary: objective yang dilayani. */
+    tempObjectiveId?: string | null;
+    /** Pakai ulang staf yang dirumahkan lebih dulu (default ya). */
+    reuse?: boolean;
+  },
 ) {
   const [role] = await tx.select().from(roles).where(eq(roles.id, input.roleId));
   if (!role) throw new UserError(`Role ${input.roleId} tidak ada`);
   const staff = await tx.select().from(agents).where(eq(agents.roleId, role.id)).orderBy(asc(agents.createdAt));
-  const active = staff.filter((a) => a.status !== 'inactive');
+  const active = staff.filter((a) => !isGone(a.status));
+  if (input.reuse !== false) {
+    const back = await findReusable(tx, role.id, input.runtime);
+    if (back) {
+      const r = await setLifecycle(ctx, tx, emit, { agentId: back.id, action: 'reactivate', actor: input.actor, reason: `Dipakai kembali: ${input.reason}` });
+      if (input.tenure && input.tenure !== back.tenure) await tx.update(agents).set({ tenure: input.tenure, tempObjectiveId: input.tempObjectiveId ?? null }).where(eq(agents.id, back.id));
+      return { ...r, reused: true as const };
+    }
+  }
   const runtime = input.runtime ?? ((active[0] ?? staff[0])?.runtime as RuntimeId | undefined) ?? 'claude-cli';
 
   let name = role.name;
@@ -77,6 +98,8 @@ export async function hireAgent(
     supervisorAgentId: staff[0]?.supervisorAgentId ?? null,
     workspacePath: `agents/${id}`,
     createdBy: input.createdBy,
+    tenure: input.tenure ?? 'permanent',
+    tempObjectiveId: input.tenure === 'temporary' ? (input.tempObjectiveId ?? null) : null,
   });
   emit({
     type: 'agent.created',
@@ -84,13 +107,13 @@ export async function hireAgent(
     entityId: id,
     objectiveId: input.objectiveId ?? null,
     actor: input.actor,
-    payload: { name, roleId: role.id, runtime, reason: input.reason },
+    payload: { name, roleId: role.id, runtime, reason: input.reason, tenure: input.tenure ?? 'permanent' },
   });
-  return { id, name, status };
+  return { id, name, status, reused: false as const };
 }
 
 export interface OrgChangeArgs {
-  type: 'hire' | 'new_department' | 'new_role';
+  type: 'hire' | 'new_department' | 'new_role' | 'suspend' | 'reactivate' | 'retire';
   reason: string;
   role_id?: string;
   runtime?: 'claude-cli' | 'openrouter';
@@ -101,13 +124,25 @@ export interface OrgChangeArgs {
   native_tools?: (typeof NATIVE_TOOLS)[number];
   task_kind?: 'work' | 'research';
   description?: string;
+  /** hire: lama kerja agent. */
+  tenure?: 'permanent' | 'on_demand' | 'temporary';
+  /** hire temporary: objective yang dilayani. */
+  objective_id?: string;
+  /** suspend / reactivate / retire: agent yang dituju. */
+  agent_id?: string;
 }
 
 /** Ringkasan satu baris untuk inbox Owner. */
 export function describeOrgChange(a: Partial<OrgChangeArgs>) {
   switch (a.type) {
     case 'hire':
-      return `Rekrut 1 staf ${a.role_id}${a.runtime ? ` (${a.runtime})` : ''}. Alasan: ${a.reason}`;
+      return `Rekrut 1 staf ${a.role_id}${a.runtime ? ` (${a.runtime})` : ''}${a.tenure && a.tenure !== 'permanent' ? `, ${a.tenure}` : ''}. Alasan: ${a.reason}`;
+    case 'suspend':
+      return `Rumahkan agent ${a.agent_id}. Alasan: ${a.reason}`;
+    case 'reactivate':
+      return `Aktifkan kembali agent ${a.agent_id}. Alasan: ${a.reason}`;
+    case 'retire':
+      return `Pensiunkan (arsipkan) agent ${a.agent_id}. Alasan: ${a.reason}`;
     case 'new_department':
       return `Divisi baru "${a.name}" (ruangan baru). Alasan: ${a.reason}`;
     case 'new_role':
@@ -127,7 +162,13 @@ export async function applyOrgChange(ctx: OfficeContext, args: OrgChangeArgs, ac
       case 'hire': {
         if (!args.role_id) throw new UserError('role_id wajib untuk rekrut staf');
         // Batas staf per role hanya mengikat aturan otomatis; persetujuan Owner boleh melampauinya.
-        return hireAgent(ctx, tx, emit, { roleId: args.role_id, runtime: args.runtime, actor, createdBy, reason: args.reason });
+        return hireAgent(ctx, tx, emit, { roleId: args.role_id, runtime: args.runtime, actor, createdBy, reason: args.reason, tenure: args.tenure, tempObjectiveId: args.objective_id });
+      }
+      case 'suspend':
+      case 'reactivate':
+      case 'retire': {
+        if (!args.agent_id) throw new UserError('agent_id wajib');
+        return setLifecycle(ctx, tx, emit, { agentId: args.agent_id, action: args.type, actor, reason: args.reason });
       }
       case 'new_department': {
         const name = args.name?.trim();
@@ -182,7 +223,7 @@ export async function listOrg(ctx: OfficeContext) {
     getAllSettings(ctx.db),
   ]);
   return {
-    limits: { maxStaffPerRole: settings.max_staff_per_role, autoHire: settings.auto_hire, hireWaitSeconds: settings.hire_wait_seconds },
+    limits: { maxStaffPerRole: settings.max_staff_per_role, autoHire: settings.auto_hire, hireWaitSeconds: settings.hire_wait_seconds, suspendIdleMinutes: settings.suspend_idle_minutes },
     departments: depts.map((d) => {
       const rs = roleRows.filter((r) => r.department === d.id);
       return {
@@ -190,7 +231,7 @@ export async function listOrg(ctx: OfficeContext) {
         name: d.name,
         color: d.color,
         createdBy: d.createdBy,
-        staff: agentRows.filter((a) => rs.some((r) => r.id === a.roleId) && a.status !== 'inactive').length,
+        staff: agentRows.filter((a) => rs.some((r) => r.id === a.roleId) && !isGone(a.status)).length,
         roles: rs.map((r) => ({
           id: r.id,
           name: r.name,
@@ -198,7 +239,7 @@ export async function listOrg(ctx: OfficeContext) {
           plannable: r.plannable,
           taskKind: r.taskKind,
           createdBy: r.createdBy,
-          staff: agentRows.filter((a) => a.roleId === r.id && a.status !== 'inactive').length,
+          staff: agentRows.filter((a) => a.roleId === r.id && !isGone(a.status)).length,
         })),
       };
     }),

@@ -64,6 +64,13 @@
       "when": 1790989644974,
       "tag": "0008_org",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1791008454923,
+      "tag": "0009_agent_lifecycle",
+      "breakpoints": true
     }
   ]
 }

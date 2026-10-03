@@ -56,6 +56,12 @@ export const agents = mysqlTable('agents', {
   supervisorAgentId: id('supervisor_agent_id').references((): AnyMySqlColumn => agents.id),
   workspacePath: varchar('workspace_path', { length: 255 }).notNull(), // relatif terhadap WORKSPACES_DIR
   createdBy: varchar('created_by', { length: 80 }).notNull(),
+  /** permanent: fungsi inti; on_demand: hidup hanya saat ada kerja; temporary: untuk satu objective. */
+  tenure: varchar('tenure', { length: 16 }).notNull().default('permanent'),
+  /** Untuk tenure temporary: objective yang dilayani. Selesai → dirumahkan, bisa dipakai ulang. */
+  tempObjectiveId: id('temp_objective_id'),
+  /** Kapan terakhir berubah status siklus hidup (dirumahkan/diaktifkan/dipensiunkan). */
+  statusChangedAt: ts('status_changed_at'),
   createdAt: createdAt(),
 });
 

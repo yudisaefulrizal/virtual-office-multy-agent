@@ -14,6 +14,8 @@ export const SETTING_DEFAULTS = {
   auto_hire: 'auto' as 'auto' | 'ask',
   /** Task siap kerja yang menunggu lebih lama dari ini (detik) memicu pertimbangan menambah staf. */
   hire_wait_seconds: 90,
+  /** Aturan HRD menurunkan staf: staf tambahan menganggur selama ini (menit) dirumahkan. 0 = tidak pernah otomatis. */
+  suspend_idle_minutes: 30,
   /** Batas run Claude CLI per jendela waktu. -1: ikut .env, 0: tanpa batas (andalkan deteksi rate limit). */
   claude_max_runs_per_window: -1,
   /** Owner mereset hitungan kuota: run sebelum waktu ini (ISO) tidak dihitung. Kosong = tidak pernah direset. */
