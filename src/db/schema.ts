@@ -294,3 +294,22 @@ export const schedules = mysqlTable('schedules', {
   lastRunAt: ts('last_run_at'),
   createdAt: createdAt(),
 });
+
+/** Akun Instagram yang dihubungkan Owner lewat Instagram Login resmi. Token 60 hari, terenkripsi. */
+export const instagramAccounts = mysqlTable('instagram_accounts', {
+  igUserId: varchar('ig_user_id', { length: 32 }).primaryKey(),
+  username: varchar('username', { length: 100 }).notNull(),
+  accountType: varchar('account_type', { length: 30 }).notNull().default(''),
+  tokenEnc: text('token_enc').notNull(),
+  permissions: varchar('permissions', { length: 500 }).notNull().default(''),
+  status: varchar('status', { length: 16 }).notNull().default('active'), // active | revoked
+  expiresAt: ts('expires_at').notNull(),
+  createdAt: createdAt(),
+  updatedAt: ts('updated_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+});
+
+/** State OAuth sekali pakai (hash), kedaluwarsa 10 menit. */
+export const instagramStates = mysqlTable('instagram_states', {
+  stateHash: varchar('state_hash', { length: 64 }).primaryKey(),
+  createdAt: createdAt(),
+});

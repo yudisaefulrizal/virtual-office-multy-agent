@@ -226,6 +226,11 @@ export interface ProviderInfo {
   updatedAt: string | null;
 }
 
+export interface InstagramOverview {
+  app: { configured: boolean; appId: string; secretLast4: string | null; redirectUri: string };
+  accounts: { id: string; username: string; accountType: string; status: 'active' | 'expiring' | 'expired' | 'revoked'; daysLeft: number; canPublish: boolean }[];
+}
+
 export interface AgentRow {
   id: string;
   name: string;
@@ -456,6 +461,12 @@ export const api = {
     if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
   },
   updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  instagram: () => request<InstagramOverview>('/api/instagram'),
+  saveInstagramApp: (body: { appId: string; appSecret?: string }) => request<InstagramOverview>('/api/instagram/app', { method: 'PUT', body: JSON.stringify(body) }),
+  removeInstagramApp: () => request<InstagramOverview>('/api/instagram/app', { method: 'DELETE' }),
+  connectInstagram: () => request<{ url: string }>('/api/instagram/connect', { method: 'POST' }),
+  refreshInstagram: (id: string) => request<InstagramOverview>(`/api/instagram/accounts/${id}/refresh`, { method: 'POST' }),
+  disconnectInstagram: (id: string) => request<InstagramOverview>(`/api/instagram/accounts/${id}`, { method: 'DELETE' }),
   removeProvider: (id: string) => request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'DELETE' }),
   removeToolCredential: (id: string) => request<ToolInfo[]>(`/api/tools/${id}/credential`, { method: 'DELETE' }),
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>

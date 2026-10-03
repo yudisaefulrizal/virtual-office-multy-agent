@@ -37,6 +37,8 @@ export interface OfficeContext {
   forceRuntime?: RuntimeId;
   /** Enkripsi credential provider. */
   secrets: SecretBox;
+  /** Alamat publik aplikasi (untuk redirect login Instagram). */
+  appOrigin?: string;
   /** Tool Gateway (MCP). Dipasang setelah server HTTP diketahui alamatnya. */
   gateway?: Gateway;
 }

@@ -2,7 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { agents, approvals, tasks, toolCredentials, toolExecutions } from '../src/db/schema';
+import { agents, approvals, instagramAccounts, tasks, toolExecutions } from '../src/db/schema';
 import { Gateway } from '../src/gateway/gateway';
 import type { Caller } from '../src/gateway/tools';
 import { buildServer } from '../src/interface/http/server';
@@ -92,25 +92,31 @@ describe('Tool Gateway', () => {
     const view = await officeView(o.ctx, () => ({ inflight: 0, cooldownUntil: null }));
     expect(view.inbox.map((i) => i.kind)).toContain('approval_pending');
 
-    // Tanpa credential → gagal dengan pesan jelas.
+    // Tanpa akun Instagram terhubung → gagal dengan pesan jelas.
     const fail = await gw.approve(a!.id);
     expect(fail.ok).toBe(false);
-    expect(fail.message).toContain('belum dipasang');
+    expect(fail.message).toContain('Belum ada akun Instagram');
 
-    // Permintaan kedua, kali ini credential ada dan Graph API ditiru.
-    await gw.setCredential('instagram_publish', 'EAAtoken-1234', { ig_user_id: '1789', api_version: 'v21.0' });
+    // Permintaan kedua, kali ini akun terhubung (lewat Instagram Login) dan Graph API ditiru.
+    await o.db.insert(instagramAccounts).values({
+      igUserId: '1789', username: 'kopisenja', accountType: 'BUSINESS', tokenEnc: o.ctx.secrets.encrypt('IGAAtoken-1234'),
+      permissions: 'instagram_business_basic,instagram_business_content_publish', expiresAt: new Date(Date.now() + 30 * 86_400_000),
+    });
     const calls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-      calls.push(`${url} ${String(init.body)}`);
-      return new Response(JSON.stringify({ id: url.endsWith('/media') ? 'creation-1' : 'media-9' }), { status: 200 });
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url} ${String(init?.body ?? '')} ${JSON.stringify(init?.headers ?? {})}`);
+      if (url.includes('status_code')) return new Response(JSON.stringify({ status_code: 'FINISHED' }), { status: 200 });
+      return new Response(JSON.stringify({ id: url.endsWith('/media') ? '555' : '999' }), { status: 200 });
     });
     await gw.call(caller, 'instagram_publish', { image_url: 'https://cdn.example.com/b.jpg', caption: 'Kopi sore' });
     const [pending] = await o.db.select().from(approvals).where(eq(approvals.status, 'pending'));
     const ok = await gw.approve(pending!.id);
-    expect(ok).toMatchObject({ ok: true, result: { mediaId: 'media-9' } });
-    expect(calls[0]).toContain('graph.facebook.com/v21.0/1789/media');
-    expect(calls[0]).toContain('access_token=EAAtoken-1234');
-    expect(calls[1]).toContain('creation_id=creation-1');
+    expect(ok).toMatchObject({ ok: true, result: { mediaId: '999', username: 'kopisenja' } });
+    expect(calls[0]).toContain('POST https://graph.instagram.com/v23.0/1789/media');
+    expect(calls[0]).toContain('Bearer IGAAtoken-1234');
+    expect(calls[0]).toContain('caption=Kopi+sore');
+    expect(calls.some((c) => c.includes('555?fields=status_code'))).toBe(true);
+    expect(calls.at(-1)).toContain('creation_id=555');
     const [exec] = await o.db.select().from(toolExecutions).where(eq(toolExecutions.approvalId, pending!.id));
     expect(exec?.status).toBe('executed');
   });
@@ -144,14 +150,5 @@ describe('Budget objective', () => {
     const trace = await objectiveTrace(o.ctx, objectiveId);
     expect(trace?.objective.status).toBe('completed');
     expect(trace?.budget.spentUsdMicros).toBe(8_000_000);
-  });
-
-  it('credential tool bisa dicabut Owner dan tidak bisa dicabut dua kali', async () => {
-    const o = await office();
-    const gw = new Gateway(o.ctx, 'http://x');
-    await gw.setCredential('instagram_publish', 'tok-secret-1234', { ig_user_id: '1' });
-    await gw.removeCredential('instagram_publish');
-    expect(await o.db.select().from(toolCredentials)).toHaveLength(0);
-    await expect(gw.removeCredential('instagram_publish')).rejects.toThrow(/belum dipasang/);
   });
 });

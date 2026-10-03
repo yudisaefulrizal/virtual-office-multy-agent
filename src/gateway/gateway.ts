@@ -1,4 +1,5 @@
 import { getCompany } from '../orchestrator/company';
+import { publishableAccount } from '../orchestrator/instagram';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -162,8 +163,7 @@ export class Gateway {
     if (toolId !== 'instagram_publish') return false;
     const company = await getCompany(this.ctx.db);
     if (!company?.running || !company.autoPublish) return false;
-    const [cred] = await this.ctx.db.select({ id: toolCredentials.toolId }).from(toolCredentials).where(eq(toolCredentials.toolId, toolId));
-    return !!cred;
+    return !!(await publishableAccount(this.ctx));
   }
 
   async approve(approvalId: string, note?: string, actor: 'owner' | 'orchestrator' = 'owner') {

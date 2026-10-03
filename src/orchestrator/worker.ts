@@ -16,6 +16,7 @@ import { onTaskAborted, onTaskCompleted } from './office';
 import { loadPlannableRoles } from './org';
 import { reviewStaffing } from './staffing';
 import { companyBrief, reviewCompany } from './company';
+import { refreshExpiringInstagram } from './instagram';
 import { scanOutDir } from './artifacts';
 import { quotaUsage } from './quota';
 
@@ -124,6 +125,7 @@ export class Worker {
   }
 
   private lastScheduleCheck = 0;
+  private lastInstagramRefresh = 0;
 
   async tick(): Promise<number> {
     if (this.ticking) return 0;
@@ -134,6 +136,10 @@ export class Worker {
       if (Date.now() - this.lastScheduleCheck >= SCHEDULE_CHECK_MS) {
         this.lastScheduleCheck = Date.now();
         await runDueSchedules(this.ctx).catch((err) => console.error('[scheduler]', err));
+        if (Date.now() - this.lastInstagramRefresh >= 3600_000) {
+          this.lastInstagramRefresh = Date.now();
+          await refreshExpiringInstagram(this.ctx).catch((err) => console.error('[instagram]', err));
+        }
         await reviewCompany(this.ctx).catch((err) => console.error('[company]', err));
         await reviewStaffing(this.ctx, (id) => {
           const st = this.runtimeState(id);

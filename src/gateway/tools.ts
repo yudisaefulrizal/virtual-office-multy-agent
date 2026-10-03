@@ -1,6 +1,5 @@
-import { eq } from 'drizzle-orm';
+import { publishInstagramImage } from '../orchestrator/instagram';
 import { z } from 'zod';
-import { toolCredentials } from '../db/schema';
 import { UserError } from '../domain';
 import type { OfficeContext } from '../orchestrator/context';
 import { searchKnowledge } from '../orchestrator/knowledge';
@@ -28,12 +27,6 @@ export interface ToolDef<S extends z.ZodRawShape = z.ZodRawShape> {
 }
 
 const define = <S extends z.ZodRawShape>(t: ToolDef<S>) => t as unknown as ToolDef;
-
-async function credentialFor(ctx: OfficeContext, toolId: string) {
-  const [row] = await ctx.db.select().from(toolCredentials).where(eq(toolCredentials.toolId, toolId));
-  if (!row) throw new UserError(`Credential untuk ${toolId} belum dipasang Owner`);
-  return { secret: ctx.secrets.decrypt(row.secretEnc), config: row.config as Record<string, string> };
-}
 
 const OrgChangeShape = {
   type: z.enum(['hire', 'new_department', 'new_role', 'suspend', 'reactivate', 'retire']).describe('hire: tambah staf dari role yang ada (staf dirumahkan dipakai ulang lebih dulu); new_department: ruangan/divisi baru; new_role: role baru (otomatis merekrut satu staf); suspend: rumahkan agent (bisa dipakai kembali); reactivate: aktifkan kembali; retire: arsipkan agent yang tidak lagi diperlukan'),
@@ -98,31 +91,15 @@ export const TOOLS: ToolDef[] = [
     id: 'instagram_publish',
     title: 'Publish ke Instagram',
     description:
-      'Minta publikasi foto + caption ke akun Instagram perusahaan. Tidak langsung tayang: Owner harus menyetujui lebih dulu.',
+      'Minta publikasi foto + caption ke akun Instagram perusahaan yang sudah dihubungkan Owner. Tidak langsung tayang kecuali Owner mengizinkan publikasi otomatis.',
     risk: 'high',
     input: {
       image_url: z.string().url().describe('URL gambar publik (JPEG) yang bisa diakses Instagram'),
       caption: z.string().min(1).max(2200),
     },
-    credential: {
-      label: 'Access token Instagram Graph API',
-      configFields: [
-        { key: 'ig_user_id', label: 'Instagram Business Account ID' },
-        { key: 'api_version', label: 'Versi Graph API (mis. v21.0)' },
-      ],
-    },
     async execute(ctx, { image_url, caption }) {
-      const { secret, config } = await credentialFor(ctx, 'instagram_publish');
-      const base = `https://graph.facebook.com/${config.api_version || 'v21.0'}/${config.ig_user_id}`;
-      const post = async (url: string, params: Record<string, string>) => {
-        const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ ...params, access_token: secret }) });
-        const body = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
-        if (!res.ok || !body.id) throw new Error(`Instagram: ${body.error?.message ?? `HTTP ${res.status}`}`);
-        return body.id;
-      };
-      const creationId = await post(`${base}/media`, { image_url, caption });
-      const mediaId = await post(`${base}/media_publish`, { creation_id: creationId });
-      return { mediaId };
+      // Akun datang dari Instagram Login resmi (halaman Akses); tidak ada token yang diketik manual.
+      return publishInstagramImage(ctx, { imageUrl: image_url, caption });
     },
   }),
 ];

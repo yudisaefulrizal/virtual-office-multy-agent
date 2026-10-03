@@ -44,6 +44,7 @@ export function AccessPage() {
         {providers.data?.map((p) => (
           <ProviderCard key={p.id} provider={p} users={agents.data?.filter((a) => a.runtime === p.id) ?? []} onChanged={() => (providers.refresh(), agents.refresh())} />
         ))}
+        <InstagramCard />
         {toolsWithCred.map((t) => (
           <ToolCard key={t.id} tool={t} onChanged={tools.refresh} />
         ))}
@@ -187,5 +188,125 @@ function ToolCard({ tool, onChanged }: { tool: ToolInfo; onChanged: () => void }
         {cred.configured && <Remove busy={busy} label="Hapus akses" what={`akses ${tool.title}`} onConfirm={() => void run(() => api.removeToolCredential(tool.id), 'Akses dihapus.')} />}
       </div>
     </form>
+  );
+}
+
+const IG_RESULT: Record<string, { ok: boolean; text: string }> = {
+  connected: { ok: true, text: 'Instagram terhubung.' },
+  cancelled: { ok: false, text: 'Izin dibatalkan di Instagram. Akun belum terhubung.' },
+  error: { ok: false, text: 'Login Instagram gagal atau kedaluwarsa. Coba hubungkan lagi.' },
+};
+const IG_STATUS = { active: 'Aktif', expiring: 'Hampir habis', expired: 'Kedaluwarsa', revoked: 'Dicabut' } as const;
+
+/** Instagram Login resmi: Owner memberi izin langsung di instagram.com. Tidak ada token yang diketik. */
+function InstagramCard() {
+  const { data, refresh } = useLive(api.instagram);
+  const [appId, setAppId] = useState('');
+  const [secret, setSecret] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(() => {
+    const r = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('instagram');
+    return r ? (IG_RESULT[r] ?? IG_RESULT.error!) : null;
+  });
+  if (!data) return null;
+
+  const run = async (fn: () => Promise<unknown>, ok?: string) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await fn();
+      if (ok) setMsg({ ok: true, text: ok });
+      refresh();
+    } catch (err) {
+      setMsg({ ok: false, text: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const configured = data.app.configured;
+  return (
+    <section className="card" aria-labelledby="ig-title">
+      <div className="row between">
+        <h2 id="ig-title">Instagram</h2>
+        <span className="chip">{data.accounts.length > 0 ? `${data.accounts.length} akun terhubung` : configured ? 'Siap dihubungkan' : 'Belum diatur'}</span>
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>
+        Login resmi lewat Meta (Instagram Login): Anda memberi izin langsung di instagram.com, lalu sistem menyimpan token terenkripsi dan memperpanjangnya
+        otomatis. Password Instagram tidak pernah diketik di sini. Akun harus Instagram Business atau Creator.
+      </p>
+
+      <details open={!configured}>
+        <summary className="small" style={{ cursor: 'pointer', fontWeight: 600 }}>1. Aplikasi Meta {configured ? `· ID ${data.app.appId} · ••••${data.app.secretLast4}` : ''}</summary>
+        <form
+          className="field"
+          style={{ marginTop: 8 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              await api.saveInstagramApp({ appId: appId.trim() || data.app.appId, appSecret: secret.trim() || undefined });
+              setSecret('');
+            }, 'Aplikasi Meta tersimpan.');
+          }}
+        >
+          <p className="small muted" style={{ margin: 0 }}>
+            Di Meta App Dashboard buka Instagram &gt; API setup with Instagram login, lalu tambahkan alamat berikut sebagai <strong>Valid OAuth redirect URI</strong>
+            (harus persis sama dan dapat dijangkau browser Anda; Meta umumnya mewajibkan HTTPS, jadi pakai alamat publik lewat <span className="mono">APP_ORIGIN</span>):
+          </p>
+          <input readOnly value={data.app.redirectUri} aria-label="Redirect URI" className="mono" onFocus={(e) => e.currentTarget.select()} />
+          <label htmlFor="ig-app-id">Instagram App ID</label>
+          <input id="ig-app-id" inputMode="numeric" value={appId} onChange={(e) => setAppId(e.target.value)} placeholder={data.app.appId || '123456789012345'} />
+          <label htmlFor="ig-app-secret">Instagram App Secret{configured ? ' (kosongkan untuk tetap memakai yang lama)' : ''}</label>
+          <input id="ig-app-secret" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+          <div className="row wrap">
+            <button type="submit" className="btn btn-ghost" disabled={busy || (!configured && (!appId.trim() || !secret.trim()))}>Simpan aplikasi</button>
+            {configured && <Remove busy={busy} label="Hapus aplikasi" what="aplikasi Meta (akun yang sudah terhubung tetap ada sampai kedaluwarsa)" onConfirm={() => void run(() => api.removeInstagramApp(), 'Aplikasi Meta dihapus.')} />}
+          </div>
+        </form>
+      </details>
+
+      <div className="field">
+        <strong className="small">2. Akun Instagram</strong>
+        {data.accounts.length === 0 ? (
+          <p className="small muted" style={{ margin: 0 }}>Belum ada akun terhubung.</p>
+        ) : (
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.accounts.map((a) => (
+              <li key={a.id} className="row wrap between" style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>
+                <span>
+                  <strong>@{a.username}</strong> <span className="small muted">{a.accountType.toLowerCase()}</span>
+                  <div className="small" style={{ color: a.status === 'active' ? 'var(--green)' : 'var(--orange-ink)' }}>
+                    {IG_STATUS[a.status]}{a.status !== 'revoked' && a.status !== 'expired' ? ` · ${a.daysLeft} hari lagi` : ' · hubungkan ulang'}
+                    {!a.canPublish && ' · tanpa izin posting'}
+                  </div>
+                </span>
+                <span className="row">
+                  {(a.status === 'active' || a.status === 'expiring') && <button type="button" className="btn btn-ghost" style={{ minHeight: 36, padding: '6px 12px' }} disabled={busy} onClick={() => void run(() => api.refreshInstagram(a.id), 'Token diperpanjang.')}>Perpanjang</button>}
+                  <Remove busy={busy} label="Putuskan" what={`akun @${a.username}`} onConfirm={() => void run(() => api.disconnectInstagram(a.id), 'Akun diputus.')} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="row wrap">
+          <button
+            type="button"
+            className="btn"
+            disabled={busy || !configured}
+            onClick={() => void run(async () => {
+              const { url } = await api.connectInstagram();
+              window.location.href = url;
+            })}
+          >
+            {data.accounts.length > 0 ? 'Hubungkan akun lain / ulang' : 'Hubungkan Instagram'}
+          </button>
+          {!configured && <span className="small muted">Isi aplikasi Meta dulu.</span>}
+        </div>
+      </div>
+      {msg && <p className={msg.ok ? 'small' : 'error'} role="status" style={{ margin: 0 }}>{msg.text}</p>}
+      <p className="small muted" style={{ margin: 0 }}>
+        Penerbitan oleh AI tetap lewat Gateway: menunggu persetujuan Anda kecuali izin publikasi otomatis diaktifkan di halaman Perusahaan. Gambar harus berupa URL publik JPEG.
+      </p>
+    </section>
   );
 }

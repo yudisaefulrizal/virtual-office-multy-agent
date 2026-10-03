@@ -10,6 +10,7 @@ import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { applyOrgChange, listOrg } from '../../orchestrator/org';
 import { companyStatus, saveCompany, setCompanyRunning } from '../../orchestrator/company';
+import { disconnectInstagram, finishInstagramLogin, instagramOverview, refreshInstagram, removeInstagramApp, setInstagramApp, startInstagramLogin } from '../../orchestrator/instagram';
 import { createObjective, promoteAllObjectives } from '../../orchestrator/office';
 import { agentPerformance, changeAgentLifecycle } from '../../orchestrator/workforce';
 import { deleteObjective } from '../../orchestrator/cleanup';
@@ -158,6 +159,39 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     if (!ctx.gateway) return reply.status(503).send({ error: 'Gateway tidak aktif' });
     await ctx.gateway.reject(id, NoteBody.parse(req.body ?? {}).note);
     return { ok: true };
+  });
+
+  // Instagram Login resmi: Owner memberi izin di instagram.com; token disimpan terenkripsi dan diperpanjang otomatis.
+  app.get('/api/instagram', () => instagramOverview(ctx));
+  app.put('/api/instagram/app', async (req) => {
+    const body = z.object({ appId: z.string().trim().max(40), appSecret: z.string().trim().max(200).optional() }).parse(req.body);
+    await setInstagramApp(ctx, body);
+    return instagramOverview(ctx);
+  });
+  app.delete('/api/instagram/app', async () => {
+    await removeInstagramApp(ctx);
+    return instagramOverview(ctx);
+  });
+  app.post('/api/instagram/connect', () => startInstagramLogin(ctx));
+  app.post('/api/instagram/accounts/:id/refresh', async (req) => {
+    const { id } = z.object({ id: z.string().regex(/^\d{3,32}$/) }).parse(req.params);
+    await refreshInstagram(ctx, id);
+    return instagramOverview(ctx);
+  });
+  app.delete('/api/instagram/accounts/:id', async (req) => {
+    const { id } = z.object({ id: z.string().regex(/^\d{3,32}$/) }).parse(req.params);
+    await disconnectInstagram(ctx, id);
+    return instagramOverview(ctx);
+  });
+  // Tujuan redirect dari Instagram; hasilnya dibawa ke halaman Akses.
+  app.get('/auth/instagram/callback', async (req, reply) => {
+    let result = 'error';
+    try {
+      result = (await finishInstagramLogin(ctx, req.query as Record<string, unknown>)).result;
+    } catch (err) {
+      app.log.error(err);
+    }
+    return reply.redirect(`/#/access?instagram=${result}`);
   });
 
   app.get('/api/tools', () => listTools(ctx));

@@ -18,6 +18,8 @@ const int = (key: string, fallback: number) => {
 export const config = {
   databaseUrl: str('DATABASE_URL', 'mysql://vo:vo@localhost:3307/vo'),
   port: int('PORT', 8070),
+  /** Alamat yang dipakai Meta untuk mengembalikan Owner setelah login Instagram (harus sama dengan Redirect URI di Meta App). */
+  appOrigin: str('APP_ORIGIN', `http://localhost:${process.env.PORT || 8070}`).replace(/\/+$/, ''),
   workspacesDir: path.resolve(str('WORKSPACES_DIR', './workspaces')),
   defaultModel: str('VO_DEFAULT_MODEL', 'sonnet'),
   forceRuntime: process.env.VO_FORCE_RUNTIME || undefined,

@@ -71,6 +71,13 @@
       "when": 1791008454923,
       "tag": "0009_agent_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1791022509502,
+      "tag": "0010_instagram_login",
+      "breakpoints": true
     }
   ]
 }
