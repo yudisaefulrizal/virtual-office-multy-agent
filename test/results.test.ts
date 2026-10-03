@@ -55,6 +55,9 @@ describe('Hasil kerja', () => {
     const r = results[0]!;
     expect(r.id).toBe(objectiveId);
     expect(r.outputs.map((x) => x.kind).sort()).toEqual(['research', 'work']);
+    // Hasil akhir = konten; riset hanya bahan pendukung.
+    expect(r.outputs.filter((x) => x.final).map((x) => x.kind)).toEqual(['work']);
+    expect(r.finalCount).toBe(1);
     expect(r.fileCount).toBeGreaterThan(0);
     // Nama file relatif terhadap out/, bukan path workspace penuh.
     expect(r.outputs.flatMap((x) => x.files.map((f) => f.name))).toEqual(expect.arrayContaining(['result.md']));
@@ -62,7 +65,11 @@ describe('Hasil kerja', () => {
     const z = await objectiveZip(o.ctx, objectiveId);
     const entries = readZip(z!.zip);
     expect(Object.keys(entries)).toContain('RINGKASAN.md');
-    expect(Object.keys(entries).filter((n) => n !== 'RINGKASAN.md').length).toBe(r.fileCount);
+    // ZIP bawaan hanya berisi hasil akhir; bahan pendukung hanya bila diminta.
+    const finalFiles = r.outputs.filter((x) => x.final).reduce((n, x) => n + x.files.length, 0);
+    expect(Object.keys(entries).filter((n) => n !== 'RINGKASAN.md').length).toBe(finalFiles);
+    const all = readZip((await objectiveZip(o.ctx, objectiveId, true))!.zip);
+    expect(Object.keys(all).filter((n) => n.startsWith('bahan-pendukung/')).length).toBeGreaterThan(0);
     expect(entries['RINGKASAN.md']).toContain('# Caption kopi lokal');
     expect(await objectiveZip(o.ctx, '00000000-0000-4000-8000-000000000000')).toBeNull();
   });

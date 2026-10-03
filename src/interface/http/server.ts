@@ -263,8 +263,9 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
 
   app.get('/api/objectives/:id/download', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const out = await objectiveZip(ctx, id);
-    if (!out) return reply.status(404).send({ error: 'Belum ada hasil untuk objective ini' });
+    const { semua } = z.object({ semua: z.enum(['1']).optional() }).parse(req.query);
+    const out = await objectiveZip(ctx, id, semua === '1');
+    if (!out) return reply.status(404).send({ error: 'Belum ada hasil akhir untuk objective ini' });
     return reply
       .header('content-disposition', `attachment; filename="${safeName(out.title)}.zip"`)
       .type('application/zip')

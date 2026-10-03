@@ -138,6 +138,7 @@ export interface ResultOutput {
   agentName: string | null;
   summary: string | null;
   completedAt: string | null;
+  final: boolean;
   files: ResultFile[];
 }
 
@@ -149,6 +150,7 @@ export interface ObjectiveResult {
   updatedAt: string | null;
   fileCount: number;
   totalBytes: number;
+  finalCount: number;
   outputs: ResultOutput[];
 }
 

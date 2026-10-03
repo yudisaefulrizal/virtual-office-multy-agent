@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { agents, artifacts, objectives, tasks } from '../db/schema';
+import { agents, artifacts, objectives, taskDependencies, tasks } from '../db/schema';
 import type { OfficeContext } from './context';
 
 export interface ResultFile {
@@ -20,6 +20,8 @@ export interface ResultOutput {
   agentName: string | null;
   summary: string | null;
   completedAt: string | null;
+  /** Hasil akhir: task pekerjaan yang tidak dipakai task lain sebagai bahan. Selain itu bahan pendukung. */
+  final: boolean;
   files: ResultFile[];
 }
 
@@ -31,6 +33,7 @@ export interface ObjectiveResult {
   updatedAt: string | null;
   fileCount: number;
   totalBytes: number;
+  finalCount: number;
   outputs: ResultOutput[];
 }
 
@@ -47,7 +50,8 @@ const summaryOf = (result: unknown): string | null => {
 
 /**
  * Hasil kerja per objective: task work/research yang selesai (versi terbaru per plan key,
- * revisi lama tidak ditampilkan) beserta file di out/-nya. Objective tanpa hasil tidak dimuat.
+ * revisi lama tidak ditampilkan) beserta file di out/-nya. Hasil akhir = task yang tidak menjadi
+ * bahan task work/research lain; sisanya (riset, dsb.) bahan pendukung. Objective tanpa hasil tidak dimuat.
  */
 export async function listResults(ctx: OfficeContext, onlyObjectiveId?: string): Promise<ObjectiveResult[]> {
   const db = ctx.db;
@@ -65,6 +69,7 @@ export async function listResults(ctx: OfficeContext, onlyObjectiveId?: string):
     .where(and(eq(tasks.status, 'completed'), inArray(tasks.objectiveId, objs.map((o) => o.id))))
     .orderBy(asc(tasks.completedAt), asc(tasks.createdAt));
   const taskIds = rows.map((r) => r.task.id);
+  const deps = taskIds.length ? await db.select().from(taskDependencies).where(inArray(taskDependencies.taskId, taskIds)) : [];
   const files = taskIds.length ? await db.select().from(artifacts).where(inArray(artifacts.taskId, taskIds)).orderBy(asc(artifacts.path)) : [];
 
   const results: ObjectiveResult[] = [];
@@ -75,13 +80,23 @@ export async function listResults(ctx: OfficeContext, onlyObjectiveId?: string):
       if (r.task.kind !== 'work' && r.task.kind !== 'research' && !files.some((f) => f.taskId === r.task.id)) continue;
       latest.set(r.task.planKey ? `${r.task.projectId}:${r.task.planKey}` : r.task.id, r);
     }
-    const outputs: ResultOutput[] = [...latest.values()].map(({ task, agentName }) => ({
+    // Task yang dipakai sebagai bahan oleh task work/research lain (lewat plan key, agar revisi ikut terhitung).
+    const mine = rows.filter((r) => r.task.objectiveId === o.id);
+    const byId = new Map(mine.map((r) => [r.task.id, r.task]));
+    const feeds = new Set<string>();
+    for (const d of deps) {
+      const user = byId.get(d.taskId);
+      const source = byId.get(d.dependsOn);
+      if (user && source && (user.kind === 'work' || user.kind === 'research') && source.planKey) feeds.add(`${source.projectId}:${source.planKey}`);
+    }
+    const outputs: ResultOutput[] = [...latest.entries()].map(([k, { task, agentName }]) => ({
       taskId: task.id,
       title: task.title,
       kind: task.kind,
       agentName,
       summary: summaryOf(task.result),
       completedAt: task.completedAt?.toISOString() ?? null,
+      final: (task.kind === 'work' || task.kind === 'research') && !feeds.has(k),
       files: files
         .filter((f) => f.taskId === task.id)
         .map((f) => ({ id: f.id, name: displayName(f.path), mimeType: f.mimeType, bytes: f.bytes, createdAt: f.createdAt.toISOString() })),
@@ -95,6 +110,7 @@ export async function listResults(ctx: OfficeContext, onlyObjectiveId?: string):
       updatedAt: outputs.map((x) => x.completedAt).filter(Boolean).sort().at(-1) ?? null,
       fileCount: outputs.reduce((n, x) => n + x.files.length, 0),
       totalBytes: outputs.reduce((n, x) => n + x.files.reduce((s, f) => s + f.bytes, 0), 0),
+      finalCount: outputs.filter((x) => x.final).length,
       outputs,
     });
   }
@@ -178,10 +194,12 @@ export function buildZip(entries: ZipEntry[]): Buffer {
   return Buffer.concat([...locals, centralBuf, end]);
 }
 
-/** ZIP hasil satu objective: folder per task + RINGKASAN.md. File yang sudah hilang dilewati. */
-export async function objectiveZip(ctx: OfficeContext, objectiveId: string) {
+/** ZIP hasil akhir satu objective (opsional + bahan pendukung): folder per task + RINGKASAN.md. File yang sudah hilang dilewati. */
+export async function objectiveZip(ctx: OfficeContext, objectiveId: string, includeSupporting = false) {
   const [result] = await listResults(ctx, objectiveId);
   if (!result) return null;
+  result.outputs = result.outputs.filter((o) => o.final || includeSupporting);
+  if (result.outputs.length === 0) return null;
   const paths = result.outputs.flatMap((o) => o.files.map((f) => f.id));
   const rows = paths.length ? await ctx.db.select().from(artifacts).where(inArray(artifacts.id, paths)) : [];
   const pathOf = new Map(rows.map((r) => [r.id, r.path]));
@@ -190,7 +208,7 @@ export async function objectiveZip(ctx: OfficeContext, objectiveId: string) {
   const summary: string[] = [`# ${result.title}`, ''];
   const used = new Set<string>();
   for (const [i, o] of result.outputs.entries()) {
-    const folder = `${String(i + 1).padStart(2, '0')}-${safeName(o.title, 'task')}`;
+    const folder = `${o.final ? '' : 'bahan-pendukung/'}${String(i + 1).padStart(2, '0')}-${safeName(o.title, 'task')}`;
     summary.push(`## ${o.title}`, `_${o.kind}${o.agentName ? ` · ${o.agentName}` : ''}_`, '', o.summary ?? '(tanpa ringkasan)', '');
     for (const f of o.files) {
       const rel = pathOf.get(f.id);

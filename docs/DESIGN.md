@@ -786,3 +786,5 @@ Owner butuh satu tempat untuk melihat dan mengunduh hasil, tanpa membuka trace o
 - `GET /api/artifacts/:id/download` (attachment) dan `GET /api/objectives/:id/download` (ZIP: folder per task + `RINGKASAN.md`). ZIP ditulis sendiri (`buildZip`, deflate + CRC32 bawaan Node), tanpa dependency baru.
 - Pembacaan file tetap hanya lewat path yang tercatat di DB dan berada di dalam `workspaces/`.
 - UI: daftar di kiri, pratinjau di kanan. Markdown dirender menjadi elemen React (tanpa innerHTML, tautan hanya http/mailto); HTML ditampilkan di iframe `sandbox=""` (tanpa skrip); SVG lewat `<img>`; tipe lain hanya unduh.
+
+Penegasan: yang utama adalah **hasil akhir**. Hasil akhir = task `work`/`research` yang tidak menjadi bahan (dependency) task work/research lain; riset dan keluaran antara ditandai pendukung dan dilipat. ZIP bawaan hanya hasil akhir; `?semua=1` menambahkan `bahan-pendukung/`.

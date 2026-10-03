@@ -17,7 +17,7 @@ Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasi
 | Tool Gateway | MCP milik Virtual Office: izin per role, tool berisiko menunggu persetujuan Owner, credential terenkripsi |
 | Budget | Batas biaya API nyata per objective; lewat batas → task ditunda |
 | Scheduler | Objective berulang (harian/interval) tanpa mengulang strategi dan perencanaan |
-| Hasil kerja | Halaman **Hasil**: file dan ringkasan tiap task per objective, dilihat langsung (Markdown, HTML aman, gambar, JSON, CSV) atau diunduh per file / ZIP per objective |
+| Hasil kerja | Halaman **Hasil**: hasil akhir tiap objective (bahan riset/antara dilipat sebagai pendukung), dilihat langsung (Markdown, HTML aman, gambar, JSON, CSV) atau diunduh per file / ZIP hasil akhir |
 | Observability | Ringkasan biaya (Rupiah/USD), sesi, token per hari, agent, objective, runtime |
 
 Tiga cara kerja saat memberi objective:

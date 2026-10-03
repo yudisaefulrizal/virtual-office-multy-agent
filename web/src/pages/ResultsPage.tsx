@@ -44,7 +44,7 @@ export function ResultsPage() {
     };
     if (picked) return lookup(picked);
     const o = filtered[0];
-    const out = o?.outputs.find((x) => x.files.length > 0) ?? o?.outputs[0];
+    const out = o?.outputs.find((x) => x.final && x.files.length > 0) ?? o?.outputs.find((x) => x.final) ?? o?.outputs[0];
     return o && out ? { file: out.files[0] ?? null, output: out, objective: o } : null;
   }, [picked, data, filtered]);
 
@@ -67,7 +67,7 @@ export function ResultsPage() {
 
       {data.length === 0 ? (
         <section className="card">
-          <p className="muted">Belum ada hasil. File dan ringkasan muncul di sini begitu ada task pekerjaan atau riset yang selesai.</p>
+          <p className="muted">Belum ada hasil. Hasil akhir tiap objective muncul di sini begitu pekerjaannya selesai.</p>
         </section>
       ) : filtered.length === 0 ? (
         <p className="muted">Tidak ada hasil yang cocok dengan “{query}”.</p>
@@ -87,6 +87,10 @@ export function ResultsPage() {
 
 function ObjectiveCard({ objective: o, current, onPick }: { objective: ObjectiveResult; current: Pick | null; onPick: (o: ResultOutput, f: ResultFile | null) => void }) {
   const st = TASK_STATUS[o.status] ?? TASK_STATUS.new!;
+  const finals = o.outputs.filter((x) => x.final);
+  const supporting = o.outputs.filter((x) => !x.final);
+  const finalFiles = finals.reduce((n, x) => n + x.files.length, 0);
+  const done = o.status === 'completed';
   return (
     <section className="card" style={{ gap: 10 }}>
       <div className="row between" style={{ alignItems: 'flex-start' }}>
@@ -95,38 +99,51 @@ function ObjectiveCard({ objective: o, current, onPick }: { objective: Objective
           <div className="row small muted" style={{ gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
             <span className={`dot ${st.dot}`} />
             <span style={{ color: st.tone, fontWeight: 500 }}>{st.label}</span>
-            <span>· {o.fileCount} file · {size(o.totalBytes)}</span>
             {o.updatedAt && <span>· {dateTime(o.updatedAt)}</span>}
           </div>
         </div>
-        {o.fileCount > 0 && (
+        {finalFiles > 0 && (
           <a className="btn btn-ghost" style={{ minHeight: 36, padding: '6px 12px', flex: 'none' }} href={`/api/objectives/${o.id}/download`} download>
             Unduh ZIP
           </a>
         )}
       </div>
-      {o.outputs.map((out) => (
-        <div key={out.taskId} style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <button
-            type="button"
-            className="pick"
-            aria-current={current?.output.taskId === out.taskId && !current.file ? 'true' : undefined}
-            onClick={() => onPick(out, null)}
-          >
-            <span style={{ fontWeight: 500 }}>{out.title}</span>
-            <span className="small muted">{KIND[out.kind] ?? out.kind}{out.agentName ? ` · ${out.agentName}` : ''}</span>
+      <div className="small" style={{ fontWeight: 600, color: done ? 'var(--green)' : 'var(--orange-ink)' }}>
+        {done ? 'Hasil akhir' : finals.length > 0 ? 'Hasil akhir (objective belum selesai, mungkin masih direvisi)' : 'Hasil akhir belum ada'}
+      </div>
+      {finals.map((out) => (
+        <OutputRows key={out.taskId} out={out} current={current} onPick={onPick} />
+      ))}
+      {supporting.length > 0 && (
+        <details style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>
+          <summary className="small muted" style={{ cursor: 'pointer' }}>Bahan pendukung ({supporting.length}): riset dan hasil antara</summary>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            {supporting.map((out) => (
+              <OutputRows key={out.taskId} out={out} current={current} onPick={onPick} />
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function OutputRows({ out, current, onPick }: { out: ResultOutput; current: Pick | null; onPick: (o: ResultOutput, f: ResultFile | null) => void }) {
+  return (
+    <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <button type="button" className="pick" aria-current={current?.output.taskId === out.taskId && !current.file ? 'true' : undefined} onClick={() => onPick(out, null)}>
+        <span style={{ fontWeight: 500 }}>{out.title}</span>
+        <span className="small muted">{KIND[out.kind] ?? out.kind}{out.agentName ? ` · ${out.agentName}` : ''}</span>
+      </button>
+      {out.files.map((f) => (
+        <div key={f.id} className="row" style={{ gap: 4 }}>
+          <button type="button" className="pick file" style={{ flex: 1 }} aria-current={current?.file?.id === f.id ? 'true' : undefined} onClick={() => onPick(out, f)}>
+            {f.name} <span className="muted">· {size(f.bytes)}</span>
           </button>
-          {out.files.map((f) => (
-            <div key={f.id} className="row" style={{ gap: 4 }}>
-              <button type="button" className="pick file" style={{ flex: 1 }} aria-current={current?.file?.id === f.id ? 'true' : undefined} onClick={() => onPick(out, f)}>
-                {f.name} <span className="muted">· {size(f.bytes)}</span>
-              </button>
-              <a className="small" href={`/api/artifacts/${f.id}/download`} download aria-label={`Unduh ${f.name}`}>Unduh</a>
-            </div>
-          ))}
+          <a className="small" href={`/api/artifacts/${f.id}/download`} download aria-label={`Unduh ${f.name}`}>Unduh</a>
         </div>
       ))}
-    </section>
+    </div>
   );
 }
 
