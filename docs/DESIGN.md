@@ -777,3 +777,12 @@ Keputusan Owner: bagian yang banyak pekerjaan punya staf sendiri; HRD bisa membu
 **Divisi dan role dinamis.** Tabel `departments`; `roles` punya `plannable/task_kind/description` sehingga Manager melihat daftar role dari database. Role/divisi baru lewat tool `propose_org_change` (khusus HRD, risiko tinggi → persetujuan Owner) atau langsung oleh Owner. Role baru hanya mendapat tool risiko rendah (A6).
 
 **Kantor modular** (`web/src/office/`): `layout.ts` menyusun gedung dari divisi (ukuran ruangan mengikuti jumlah staf, dua baris ruangan + koridor, pintu ke koridor, maksimal 6 divisi per lantai); `pathfinding.ts` A* di grid 0,5 ubin; `behavior.ts` mesin perilaku avatar (murni kosmetik di browser, tanpa kuota). Prioritas perilaku mengikuti kondisi nyata: rapat > serah-terima hasil > bekerja di meja > aktivitas acak (hanya saat benar-benar menganggur). Pantry dan tempatnya (mesin kopi, sofa, jendela) dipakai satu orang per tempat.
+
+## 15. Halaman Hasil kerja (2026-10-03)
+
+Owner butuh satu tempat untuk melihat dan mengunduh hasil, tanpa membuka trace objective satu per satu.
+
+- `GET /api/results`: per objective, task `work`/`research` yang selesai (versi terbaru per plan key; revisi lama tidak ditampilkan) beserta ringkasan dan file di `out/`. Objective yang masih berjalan menampilkan hasil parsial. Nama file relatif terhadap `out/`, bukan path workspace.
+- `GET /api/artifacts/:id/download` (attachment) dan `GET /api/objectives/:id/download` (ZIP: folder per task + `RINGKASAN.md`). ZIP ditulis sendiri (`buildZip`, deflate + CRC32 bawaan Node), tanpa dependency baru.
+- Pembacaan file tetap hanya lewat path yang tercatat di DB dan berada di dalam `workspaces/`.
+- UI: daftar di kiri, pratinjau di kanan. Markdown dirender menjadi elemen React (tanpa innerHTML, tautan hanya http/mailto); HTML ditampilkan di iframe `sandbox=""` (tanpa skrip); SVG lewat `<img>`; tipe lain hanya unduh.

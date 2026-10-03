@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { asc, eq } from 'drizzle-orm';
@@ -11,6 +10,7 @@ import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { applyOrgChange, listOrg } from '../../orchestrator/org';
 import { createObjective } from '../../orchestrator/office';
+import { displayName, listResults, objectiveZip, readWorkspaceFile as readArtifactFile, safeName } from '../../orchestrator/results';
 import { setObjectiveBudget } from '../../orchestrator/budget';
 import { setSchedule } from '../../orchestrator/scheduler';
 import { usageStats } from '../../orchestrator/stats';
@@ -233,11 +233,7 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
   });
 
   // File dibaca hanya jika path-nya tercatat di DB dan berada di dalam folder workspaces.
-  const readWorkspaceFile = async (rel: string) => {
-    const full = path.resolve(ctx.workspacesDir, rel);
-    if (!full.startsWith(ctx.workspacesDir + path.sep)) throw new Error('Path di luar workspace');
-    return readFile(full);
-  };
+  const readWorkspaceFile = (rel: string) => readArtifactFile(ctx, rel);
 
   app.get('/api/artifacts/:id/content', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
@@ -247,6 +243,32 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     if (!buf) return reply.status(410).send({ error: 'File artifact sudah tidak ada' });
     const textual = !a.mimeType || /^text\/|json|svg/.test(a.mimeType);
     return reply.type(textual ? 'text/plain; charset=utf-8' : a.mimeType!).send(buf);
+  });
+
+  app.get('/api/artifacts/:id/download', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const [a] = await ctx.db.select().from(artifacts).where(eq(artifacts.id, id));
+    if (!a) return reply.status(404).send({ error: 'Artifact tidak ditemukan' });
+    const buf = await readWorkspaceFile(a.path).catch(() => null);
+    if (!buf) return reply.status(410).send({ error: 'File artifact sudah tidak ada' });
+    const name = displayName(a.path).split('/').pop()!;
+    return reply
+      .header('content-disposition', `attachment; filename="${safeName(name, 'file').replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(name)}`)
+      .type('application/octet-stream')
+      .send(buf);
+  });
+
+  // Hasil kerja: daftar per objective, dan unduhan ZIP satu objective.
+  app.get('/api/results', () => listResults(ctx));
+
+  app.get('/api/objectives/:id/download', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const out = await objectiveZip(ctx, id);
+    if (!out) return reply.status(404).send({ error: 'Belum ada hasil untuk objective ini' });
+    return reply
+      .header('content-disposition', `attachment; filename="${safeName(out.title)}.zip"`)
+      .type('application/zip')
+      .send(out.zip);
   });
 
   app.get('/api/sessions/:id/log', async (req, reply) => {

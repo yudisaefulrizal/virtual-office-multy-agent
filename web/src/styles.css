@@ -179,3 +179,29 @@ select { font: inherit; padding: 9px 10px; border: 1px solid var(--grey); backgr
 /* Tooltip di tepi grafik ditambatkan ke dalam agar tidak keluar dari kartu. */
 .colchart-tip.tip-left { left: auto; right: 0; transform: none; }
 .colchart-tip.tip-right { left: 0; transform: none; }
+
+/* Halaman Hasil kerja */
+.results-grid { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.results-list { display: flex; flex-direction: column; gap: 12px; }
+.results-viewer { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+.pick { box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; cursor: pointer; border: 0; border-left: 3px solid transparent; background: none; color: inherit; font: inherit; text-align: left; word-break: break-word; }
+.pick.file { flex-direction: row; flex-wrap: wrap; gap: 0 6px; font-family: var(--mono); font-size: 12px; }
+.pick:hover { background: var(--bg); }
+.pick:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.pick[aria-current='true'] { background: var(--blue-tint); border-left-color: var(--blue); }
+.html-preview { width: 100%; height: 70vh; border: 1px solid var(--line); background: #fff; }
+.md { display: flex; flex-direction: column; gap: 10px; line-height: 1.55; overflow-wrap: anywhere; }
+.md h1 { font-size: 22px; } .md h2 { font-size: 18px; } .md h3 { font-size: 16px; } .md h4, .md h5, .md h6 { font-size: 14px; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { font-weight: 600; margin: 8px 0 0; }
+.md p, .md ul, .md ol, .md blockquote { margin: 0; }
+.md ul, .md ol { padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
+.md blockquote { padding: 4px 12px; border-left: 3px solid var(--line); color: var(--ink-2); }
+.md code { font-family: var(--mono); font-size: 0.9em; background: #f6f7f3; padding: 1px 4px; }
+.md pre.md-code { margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: 12px; background: #f6f7f3; padding: 12px; overflow: auto; }
+.md hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
+.md table { border-collapse: collapse; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+@media (max-width: 900px) {
+  .results-grid { grid-template-columns: minmax(0, 1fr); }
+  .results-viewer { position: static; max-height: none; }
+}

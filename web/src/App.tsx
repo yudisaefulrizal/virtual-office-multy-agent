@@ -5,6 +5,7 @@ import { KnowledgePage } from './pages/KnowledgePage';
 import { ObjectivePage } from './pages/ObjectivePage';
 import { ObjectivesPage } from './pages/ObjectivesPage';
 import { OfficePage } from './pages/OfficePage';
+import { ResultsPage } from './pages/ResultsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SummaryPage } from './pages/SummaryPage';
 
@@ -69,7 +70,9 @@ export function App() {
       ? 'decisions'
       : route.startsWith('/settings')
         ? 'settings'
-        : route.startsWith('/knowledge')
+        : route.startsWith('/results')
+          ? 'results'
+          : route.startsWith('/knowledge')
           ? 'knowledge'
           : route.startsWith('/summary')
             ? 'summary'
@@ -92,6 +95,9 @@ export function App() {
           <nav className="nav" aria-label="Utama">
             <a href="#/" aria-current={section === 'office' ? 'page' : undefined}>
               Kantor
+            </a>
+            <a href="#/results" aria-current={section === 'results' ? 'page' : undefined}>
+              Hasil
             </a>
             <a href="#/summary" aria-current={section === 'summary' ? 'page' : undefined}>
               Ringkasan
@@ -122,6 +128,8 @@ export function App() {
         <ObjectivesPage />
       ) : section === 'settings' ? (
         <SettingsPage />
+      ) : section === 'results' ? (
+        <ResultsPage />
       ) : section === 'knowledge' ? (
         <KnowledgePage />
       ) : section === 'summary' ? (

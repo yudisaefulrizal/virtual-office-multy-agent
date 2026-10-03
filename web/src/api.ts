@@ -123,6 +123,35 @@ export interface Artifact {
   createdAt: string;
 }
 
+export interface ResultFile {
+  id: string;
+  name: string;
+  mimeType: string | null;
+  bytes: number;
+  createdAt: string;
+}
+
+export interface ResultOutput {
+  taskId: string;
+  title: string;
+  kind: string;
+  agentName: string | null;
+  summary: string | null;
+  completedAt: string | null;
+  files: ResultFile[];
+}
+
+export interface ObjectiveResult {
+  id: string;
+  title: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string | null;
+  fileCount: number;
+  totalBytes: number;
+  outputs: ResultOutput[];
+}
+
 export interface TraceTask {
   id: string;
   kind: string;
@@ -337,6 +366,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 export const api = {
   office: () => request<OfficeView>('/api/office'),
   objectives: () => request<ObjectiveSummary[]>('/api/objectives'),
+  results: () => request<ObjectiveResult[]>('/api/results'),
   objective: (id: string) => request<ObjectiveTrace>(`/api/objectives/${id}`),
   createObjective: (title: string, description: string, mode: ObjectiveMode, schedule?: ScheduleInput) =>
     request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description, mode, schedule }) }),
