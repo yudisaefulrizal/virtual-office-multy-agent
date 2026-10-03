@@ -5,3 +5,4 @@ workspaces/
 .env
 *.log
 .vo-secret
+server.log
