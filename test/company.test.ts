@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { checkAgenda } from '../src/agents/schemas';
-import { decisions, events, objectives } from '../src/db/schema';
+import { events, objectives } from '../src/db/schema';
 import { type Company, getCompany, reviewCompany, saveCompany, setCompanyRunning, companyStatus } from '../src/orchestrator/company';
 import { FakeRuntime, type FakeHandler } from '../src/runtimes/fake';
 import { setupOffice } from './helpers';
@@ -98,40 +98,31 @@ describe('Perusahaan otonom', () => {
     expect(notices.some((n) => (n.payload as { title: string }).title.includes('budget bulanan'))).toBe(true);
   });
 
-  it('keputusan strategis dalam batas disetujui otomatis; yang butuh akses baru dieskalasi ke Owner', async () => {
-    const strategicAgenda = (decisionRequests: unknown[]): FakeHandler => async (req) => {
+  it('eskalasi CEO sampai ke Owner sebagai pemberitahuan, tanpa menghentikan pekerjaan lain', async () => {
+    const o = await office(async (req) => {
       const props = Object.keys((req.outputSchema as { properties?: object }).properties ?? {});
       if (props.includes('assessment')) {
-        return { output: { assessment: 'x', objectives: [{ title: 'Arah produk kopi', description: 'Tentukan arah produk tahun ini.', mode: 'strategic', rationale: 'x' }], escalations: [] } };
+        return {
+          output: {
+            assessment: 'x',
+            objectives: [{ title: 'Konten edukasi kopi', description: 'Buat paket konten edukasi kopi.', rationale: 'x' }],
+            escalations: [{ title: 'Perlu akun Instagram', message: 'Untuk menerbitkan konten, Owner perlu memasang akses Instagram.' }],
+          },
+        };
       }
-      const r = await real(req);
-      if (props.includes('execution_brief')) return { ...r, output: { ...(r.output as object), owner_requests: decisionRequests } };
-      return r;
-    };
-
-    const ok = await office(strategicAgenda([]));
-    await autopilot(ok);
-    await reviewCompany(ok.ctx);
-    await ok.worker.drain();
-    const [d] = await ok.db.select().from(decisions);
-    expect(d!.status).toBe('approved');
-    expect((await ok.db.select().from(objectives).where(eq(objectives.title, 'Arah produk kopi')))[0]!.status).toBe('completed');
-    await cleanup?.();
-
-    const blocked = await office(strategicAgenda([{ type: 'tool', key: 'instagram', reason: 'Perlu akun Instagram' }]));
-    await autopilot(blocked);
-    await reviewCompany(blocked.ctx);
-    await blocked.worker.drain();
-    const [d2] = await blocked.db.select().from(decisions);
-    expect(d2!.status).toBe('proposed');
-    const obj = (await blocked.db.select().from(objectives).where(eq(objectives.title, 'Arah produk kopi')))[0]!;
-    expect(obj.status).toBe('awaiting_approval');
-    const notice = (await blocked.db.select().from(events)).find((e) => e.type === 'owner.notified' && (e.payload as { title: string }).title.startsWith('Perlu keputusan Anda'));
-    expect((notice!.payload as { message: string }).message).toMatch(/instagram/i);
+      return real(req);
+    });
+    await autopilot(o);
+    await reviewCompany(o.ctx);
+    await o.worker.drain();
+    const work = (await o.db.select().from(objectives)).find((x) => x.title === 'Konten edukasi kopi')!;
+    expect(work.status).toBe('completed');
+    const notice = (await o.db.select().from(events)).find((e) => e.type === 'owner.notified' && (e.payload as { title: string }).title === 'CEO: Perlu akun Instagram');
+    expect((notice!.payload as { message: string }).message).toMatch(/Instagram/);
   });
 
   it('checkAgenda menolak duplikat, kelebihan jumlah, dan larangan Owner', () => {
-    const mk = (title: string, description = 'Deskripsi yang cukup panjang.') => ({ title, description, mode: 'planned' as const, rationale: 'x' });
+    const mk = (title: string, description = 'Deskripsi yang cukup panjang.') => ({ title, description, rationale: 'x' });
     const agenda = (...objs: ReturnType<typeof mk>[]) => ({ assessment: 'x', objectives: objs, escalations: [] });
     const input = { maxNew: 1, existingTitles: ['Konten kopi'], forbidden: 'politik\njudi' };
     expect(checkAgenda(agenda(mk('Riset pasar kopi')), input)).toBeNull();

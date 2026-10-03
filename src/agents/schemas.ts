@@ -126,7 +126,6 @@ export const AgendaOutput = z.strictObject({
       z.strictObject({
         title: z.string().min(5).max(120),
         description: z.string().min(10).describe('Apa yang harus dicapai, untuk siapa, dan ukuran selesai'),
-        mode: z.enum(['planned', 'strategic']).describe('planned: Manager merencanakan lalu tim bekerja; strategic: hanya untuk keputusan besar (memakai banyak kuota)'),
         rationale: z.string().min(1),
       }),
     )

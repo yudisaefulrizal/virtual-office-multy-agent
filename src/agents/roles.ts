@@ -286,7 +286,6 @@ export function agendaInstructions(input: {
     '## Yang harus kamu lakukan',
     `- Pilih paling banyak ${input.maxNew} objective baru yang paling bernilai bagi bisnis ini. Boleh nol bila memang tidak ada yang perlu.`,
     '- Setiap objective harus konkret dan bisa diselesaikan tim (bukan niat umum). Hindari pekerjaan yang sudah ada di daftar atas.',
-    '- Utamakan mode planned. Pakai strategic hanya untuk keputusan arah besar (memakan banyak kuota).',
     '- Hormati pedoman dan larangan Owner. Jangan merencanakan tindakan yang butuh akun/credential yang belum disediakan.',
     '- Lapor ke Owner (escalations) HANYA bila ada hal yang benar-benar tidak bisa diputuskan dalam batas ini. Jangan meminta izin untuk hal rutin.',
   ].join('\n');

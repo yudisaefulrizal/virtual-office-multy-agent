@@ -1,8 +1,8 @@
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { type CompanyBrief, agendaInstructions, companyBriefText } from '../agents/roles';
-import type { Agenda, AgendaInput, DecisionProposal } from '../agents/schemas';
+import type { Agenda, AgendaInput } from '../agents/schemas';
 import type { Tx } from '../db/client';
-import { agentSessions, objectives, tasks, toolCredentials } from '../db/schema';
+import { agentSessions, objectives, tasks } from '../db/schema';
 import { Objective, UserError, type Actor } from '../domain';
 import { type Emit, type OfficeContext, withTx } from './context';
 import { createObjectiveIn, insertTask, promoteAllObjectives } from './office';
@@ -170,7 +170,7 @@ export async function onAgendaCompleted(ctx: OfficeContext, tx: Tx, emit: Emit, 
   const actor: Actor = `agent:${task.assignedAgentId}`;
   const created: string[] = [];
   for (const o of result.objectives.slice(0, maxNew)) {
-    const r = await createObjectiveIn(ctx, tx, emit, { title: o.title, description: o.description, mode: o.mode }, { actor: 'orchestrator', extra: { source: 'autopilot', agendaObjectiveId: task.objectiveId, rationale: o.rationale } });
+    const r = await createObjectiveIn(ctx, tx, emit, { title: o.title, description: o.description, mode: 'planned' }, { actor: 'orchestrator', extra: { source: 'autopilot', agendaObjectiveId: task.objectiveId, rationale: o.rationale } });
     created.push(r.objectiveId);
   }
   for (const e of result.escalations) {
@@ -188,26 +188,6 @@ export async function onAgendaAborted(tx: Tx, emit: Emit, objectiveId: string) {
   await tx.update(objectives).set({ status: 'failed', updatedAt: new Date() }).where(eq(objectives.id, objectiveId));
   emit({ type: 'objective.failed', entityType: 'objective', entityId: objectiveId, objectiveId, actor: 'orchestrator' });
   return true;
-}
-
-/**
- * Apakah keputusan CEO untuk objective buatan perusahaan boleh disetujui tanpa Owner?
- * Mengembalikan alasan eskalasi, atau null bila dalam batas.
- */
-export async function autoApproveBlocker(ctx: OfficeContext, tx: Tx, objectiveId: string, proposal: DecisionProposal): Promise<string | null> {
-  const company = await getCompany(tx);
-  if (!company?.running) return null; // bukan mode perusahaan: aturan lama (decision_approval) yang berlaku
-  const [o] = await tx.select().from(objectives).where(eq(objectives.id, objectiveId));
-  if (!o || !isAutopilot(o)) return null;
-  const remaining = company.monthlyBudgetUsd > 0 ? company.monthlyBudgetUsd - (await monthSpentUsd(tx)) : Infinity;
-  if (company.monthlyBudgetUsd > 0 && proposal.budget_cap_usd > remaining) return `Budget yang diminta ($${proposal.budget_cap_usd}) melebihi sisa budget bulan ini ($${remaining.toFixed(2)})`;
-  const creds = await tx.select({ toolId: toolCredentials.toolId }).from(toolCredentials);
-  for (const r of proposal.owner_requests) {
-    if (r.type === 'provider' && !ctx.runtimes.has(r.key as never)) return `Butuh provider ${r.key} yang belum dipasang: ${r.reason}`;
-    if (r.type === 'tool' && !creds.some((c) => c.toolId.includes(r.key.toLowerCase()) || r.key.toLowerCase().includes(c.toolId))) return `Butuh akses ${r.key} yang belum disediakan: ${r.reason}`;
-    if (r.type === 'budget' && (r.amount_usd ?? 0) > remaining) return `Permintaan budget $${r.amount_usd} melebihi sisa budget bulan ini`;
-  }
-  return null;
 }
 
 /** Status untuk halaman Perusahaan. */
