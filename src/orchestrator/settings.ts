@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { settings } from '../db/schema';
+import type { Company } from './company';
 
 /** Pengaturan Owner beserta nilai default-nya. */
 export const SETTING_DEFAULTS = {
@@ -20,6 +21,8 @@ export const SETTING_DEFAULTS = {
   claude_max_runs_per_window: -1,
   /** Owner mereset hitungan kuota: run sebelum waktu ini (ISO) tidak dihitung. Kosong = tidak pernah direset. */
   quota_counted_since: '',
+  /** Piagam perusahaan (jenis usaha, produk, batas) dan status operasi otonom. null = belum diisi. */
+  company: null as Company | null,
 };
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
 

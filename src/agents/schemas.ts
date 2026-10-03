@@ -118,6 +118,54 @@ export const DecisionOutput = z.strictObject({
 });
 export type DecisionProposal = z.infer<typeof DecisionOutput>;
 
+/** Output task `agenda` (CEO): objective apa yang dikerjakan perusahaan pada siklus ini. */
+export const AgendaOutput = z.strictObject({
+  assessment: z.string().min(1).describe('Penilaian singkat kondisi perusahaan dan alasan memilih agenda ini'),
+  objectives: z
+    .array(
+      z.strictObject({
+        title: z.string().min(5).max(120),
+        description: z.string().min(10).describe('Apa yang harus dicapai, untuk siapa, dan ukuran selesai'),
+        mode: z.enum(['planned', 'strategic']).describe('planned: Manager merencanakan lalu tim bekerja; strategic: hanya untuk keputusan besar (memakai banyak kuota)'),
+        rationale: z.string().min(1),
+      }),
+    )
+    .describe('Daftar kosong bila memang tidak ada yang perlu dikerjakan'),
+  escalations: z
+    .array(z.strictObject({ title: z.string().min(3).max(120), message: z.string().min(3).max(1000) }))
+    .describe('Hanya hal yang tidak bisa diputuskan perusahaan sendiri dalam batas dari Owner'),
+});
+export type Agenda = z.infer<typeof AgendaOutput>;
+
+export interface AgendaInput {
+  maxNew: number;
+  existingTitles: string[];
+  forbidden: string;
+}
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+export function checkAgenda(a: Agenda, input: unknown): string | null {
+  const { maxNew = 1, existingTitles = [], forbidden = '' } = (input ?? {}) as Partial<AgendaInput>;
+  if (a.objectives.length > maxNew) return `Terlalu banyak objective (${a.objectives.length}). Maksimal ${maxNew} pada siklus ini.`;
+  const seen = new Set(existingTitles.map(norm));
+  for (const o of a.objectives) {
+    const k = norm(o.title);
+    if (seen.has(k)) return `Objective "${o.title}" sudah ada atau baru dikerjakan. Pilih pekerjaan lain.`;
+    seen.add(k);
+  }
+  const banned = forbidden
+    .split(/[\n;]+/)
+    .map((x) => norm(x))
+    .filter((x) => x.length >= 4);
+  for (const o of a.objectives) {
+    const text = norm(`${o.title} ${o.description}`);
+    const hit = banned.find((b) => text.includes(b));
+    if (hit) return `Objective "${o.title}" melanggar batasan Owner ("${hit}"). Ganti dengan pekerjaan lain.`;
+  }
+  return null;
+}
+
 export function checkFraming(f: Framing): string | null {
   const seen = new Set<string>();
   for (const q of f.questions) {
@@ -192,6 +240,7 @@ export const TASK_KINDS: Partial<Record<TaskKind, KindSpec>> = {
   research: { schema: ResearchOutput, requires: ['structured_output', 'workspace_files', 'web_research'], timeoutMs: 900_000 },
   planning: { schema: PlanOutput, requires: ['structured_output'], timeoutMs: 300_000, check: checkPlan },
   review: { schema: ReviewOutput, requires: ['structured_output', 'workspace_files'], timeoutMs: 300_000, check: checkReview },
+  agenda: { schema: AgendaOutput, requires: ['structured_output'], timeoutMs: 300_000, check: checkAgenda },
   framing: { schema: FramingOutput, requires: ['structured_output'], timeoutMs: 300_000, check: checkFraming },
   consultation: { schema: ConsultationOutput, requires: ['structured_output'], timeoutMs: 300_000 },
   decision: { schema: DecisionOutput, requires: ['structured_output'], timeoutMs: 300_000 },
@@ -209,6 +258,8 @@ export function resultDigest(kind: string, result: unknown): string {
       return `Rekomendasi: ${r.recommendation}\nAnalisis: ${r.analysis}${list(r.risks, 'Risiko')}${list(r.alternatives, 'Alternatif')}`;
     case 'research':
       return `${r.summary ?? ''}${list(r.findings, 'Temuan')}`;
+    case 'agenda':
+      return `Agenda: ${(r.objectives ?? []).map((o: { title: string }) => o.title).join('; ') || '(tidak ada)'}`;
     case 'framing':
       return `Visi: ${r.vision}`;
     case 'decision':

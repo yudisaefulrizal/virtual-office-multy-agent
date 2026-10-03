@@ -9,13 +9,14 @@ import {
   reviewInstructions,
   revisionInstructions,
 } from '../agents/roles';
-import { kindSpec, topoOrder, type DecisionProposal, type Framing, type Plan, type Review } from '../agents/schemas';
+import { kindSpec, topoOrder, type Agenda, type DecisionProposal, type Framing, type Plan, type Review } from '../agents/schemas';
 import type { Tx } from '../db/client';
 import { agents, decisions, departments, objectives, projects, roles, schedules, taskDependencies, tasks } from '../db/schema';
 import { Objective, Project, type Actor, type ObjectiveStatus, type ProjectStatus, type TaskKind, type TaskStatus } from '../domain';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
 import { type KnowledgeInput, upsertKnowledge } from './knowledge';
 import { loadPlannableRoles } from './org';
+import { onAgendaAborted, onAgendaCompleted } from './company';
 import { onDecisionCompleted, onFramingCompleted, onStrategicTaskFinished, startStrategicLoop } from './strategy';
 
 type TaskRow = typeof tasks.$inferSelect;
@@ -174,15 +175,26 @@ export interface CreateObjectiveInput {
  * dibuat langsung oleh Owner; Manager yang merencanakan eksekusinya.
  */
 export async function createObjective(ctx: OfficeContext, input: CreateObjectiveInput) {
-  return withTx(ctx, async (tx, emit) => {
+  return withTx(ctx, (tx, emit) => createObjectiveIn(ctx, tx, emit, input));
+}
+
+/** Versi di dalam transaksi yang sudah ada. `origin` menandai objective buatan perusahaan sendiri (autopilot). */
+export async function createObjectiveIn(
+  ctx: OfficeContext,
+  tx: Tx,
+  emit: Emit,
+  input: CreateObjectiveInput,
+  origin: { actor: Actor; extra?: Record<string, unknown> } = { actor: 'owner' },
+) {
+  {
     const mode = input.mode ?? 'planned';
     const objectiveId = randomUUID();
     const decisionId = randomUUID();
     const projectId = randomUUID();
     const description = input.description?.trim() || input.title;
 
-    await tx.insert(objectives).values({ id: objectiveId, title: input.title, description, status: 'new', constraints: { mode } });
-    emit({ type: 'objective.created', entityType: 'objective', entityId: objectiveId, objectiveId, actor: 'owner', payload: { title: input.title, mode } });
+    await tx.insert(objectives).values({ id: objectiveId, title: input.title, description, status: 'new', constraints: { mode, ...origin.extra } });
+    emit({ type: 'objective.created', entityType: 'objective', entityId: objectiveId, objectiveId, actor: origin.actor, payload: { title: input.title, mode, ...origin.extra } });
 
     if (mode === 'strategic') {
       const taskId = await startStrategicLoop(tx, emit, objectiveId);
@@ -194,7 +206,7 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
       id: decisionId,
       objectiveId,
       status: 'approved',
-      proposedBy: 'owner',
+      proposedBy: origin.actor,
       reviewedAt: new Date(),
       content: {
         strategy:
@@ -203,7 +215,7 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
             : 'Manager menyusun rencana, tim mengerjakan, Manager mereview.',
       },
     });
-    emit({ type: 'decision.approved', entityType: 'decision', entityId: decisionId, objectiveId, actor: 'owner' });
+    emit({ type: 'decision.approved', entityType: 'decision', entityId: decisionId, objectiveId, actor: origin.actor });
 
     await tx.insert(projects).values({ id: projectId, objectiveId, decisionId, title: input.title, status: 'active' });
     emit({ type: 'project.created', entityType: 'project', entityId: projectId, objectiveId, actor: 'orchestrator' });
@@ -212,11 +224,11 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
       mode === 'direct'
         ? await insertTask(tx, emit, {
             objectiveId, projectId, kind: 'work', title: input.title, instructions: description,
-            roleId: 'content_writer', planKey: 'main', requestedBy: 'owner',
+            roleId: 'content_writer', planKey: 'main', requestedBy: origin.actor,
           })
         : await insertTask(tx, emit, {
             objectiveId, projectId, kind: 'planning', title: `Rencana: ${input.title}`, instructions: planningInstructions(await loadPlannableRoles(tx)),
-            roleId: 'manager', planKey: 'plan', requestedBy: 'owner',
+            roleId: 'manager', planKey: 'plan', requestedBy: origin.actor,
           });
     await promoteReadyTasks(ctx, tx, emit, objectiveId);
 
@@ -225,7 +237,7 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
     emit({ type: 'objective.activated', entityType: 'objective', entityId: objectiveId, objectiveId, actor: 'orchestrator' });
 
     return { objectiveId, projectId, taskId };
-  });
+  }
 }
 
 /** Playbook eksekusi: reaksi deterministik saat task selesai (DESIGN.md §4.4). */
@@ -239,6 +251,7 @@ export async function onTaskCompleted(ctx: OfficeContext, tx: Tx, emit: Emit, ta
     await upsertKnowledge(tx, emit, items, { taskId: task.id, objectiveId: task.objectiveId, actor: `agent:${task.assignedAgentId}` });
   }
   if (!task.projectId) {
+    if (task.kind === 'agenda') await onAgendaCompleted(ctx, tx, emit, task, result as Agenda);
     if (task.kind === 'framing') await onFramingCompleted(tx, emit, task, result as Framing);
     if (task.kind === 'decision') await onDecisionCompleted(ctx, tx, emit, task, result as DecisionProposal);
   }
@@ -385,7 +398,10 @@ async function handleReview(tx: Tx, emit: Emit, review: TaskRow, result: Review)
  * (Recurring objective: Phase 7.)
  */
 export async function onTaskFinished(tx: Tx, emit: Emit, task: { projectId: string | null; objectiveId: string }) {
-  if (!task.projectId) return onStrategicTaskFinished(tx, emit, task.objectiveId);
+  if (!task.projectId) {
+    if (await onAgendaAborted(tx, emit, task.objectiveId)) return;
+    return onStrategicTaskFinished(tx, emit, task.objectiveId);
+  }
   const rows = await tx.select({ status: tasks.status }).from(tasks).where(eq(tasks.projectId, task.projectId));
   const statuses = rows.map((r) => r.status as TaskStatus);
   const terminal = ['completed', 'failed', 'cancelled'];

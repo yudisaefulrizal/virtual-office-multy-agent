@@ -801,3 +801,16 @@ HRD adalah controller tenaga kerja, bukan daftar agent. Yang sudah diterapkan:
 - **HRD agent** memakai `propose_org_change` untuk `hire` (+`tenure`, `objective_id`), `suspend`, `reactivate`, `retire`; semuanya menunggu persetujuan Owner. Owner mengatur langsung di Pengaturan.
 
 Belum diterapkan: memindahkan agent antar divisi, menggabung/memecah role otomatis, sumber agent eksternal (marketplace), skill/capability per agent, dan penggantian model otomatis (saat ini hanya saran).
+
+## 17. Perusahaan otonom (2026-10-03)
+
+Arah produk: Owner **tidak mengoperasikan** kantor. Owner hanya mengisi piagam (jenis usaha, produk, target, pedoman, larangan keras) dan batas (budget API bulanan, jumlah pekerjaan bersamaan, objective baru per agenda, jeda agenda, izin publikasi otomatis). Selebihnya diputuskan perusahaan.
+
+- **Piagam** disimpan di setting `company` bersama status `running`. Ringkasannya disisipkan ke system prompt semua agent.
+- **Pengendali** (`reviewCompany`, tiap 15 detik, deterministik): bila berjalan, budget bulanan belum habis, kuota Claude < 80%, ada ruang objective, dan jeda terpenuhi → membuat objective khusus `agenda` berisi satu task `agenda` untuk CEO. Jeda: `cycleHours` saat masih ada pekerjaan; 30 menit bila perusahaan menganggur.
+- **Task `agenda`**: CEO memilih paling banyak N objective (planned/strategic) dan boleh mengajukan eskalasi. Validasi semantik menolak duplikat objective yang sedang/baru dikerjakan, kelebihan jumlah, dan pelanggaran larangan keras. Objective hasilnya bertanda `source: autopilot`.
+- **Persetujuan otomatis dalam batas**: keputusan strategis objective autopilot disetujui sistem kecuali meminta sesuatu di luar batas (budget melebihi sisa, provider/akses yang belum terpasang) → event `owner.notified` "Perlu keputusan Anda" dan keputusan menunggu Owner. Publikasi (`instagram_publish`) disetujui otomatis hanya bila `autoPublish` aktif dan credential terpasang. Perekrutan memakai aturan HRD yang sudah ada.
+- **Pagar**: budget API bulanan habis → perusahaan dijeda otomatis dan Owner diberi tahu. Kuota Claude dicadangkan 20% untuk pekerjaan yang sudah berjalan.
+- **Halaman Perusahaan** (`#/company`): form piagam, tombol Jalankan/Jeda, status (pekerjaan berjalan, agenda berikutnya, budget, kuota), dan daftar pekerjaan yang diputuskan perusahaan. Halaman Kantor tetap menampilkan "Perlu Anda" hanya untuk eskalasi.
+
+Batas yang belum diuji dengan Claude sungguhan: mutu agenda CEO dan apakah 20% cadangan kuota cukup. Belum ada evaluasi hasil (mis. Instagram Insights) yang menjadi umpan balik ke agenda berikutnya; saat ini CEO hanya melihat ringkasan hasil akhir sebelumnya.

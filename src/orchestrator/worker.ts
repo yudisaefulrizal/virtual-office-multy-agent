@@ -15,6 +15,7 @@ import { runDueSchedules } from './scheduler';
 import { onTaskAborted, onTaskCompleted } from './office';
 import { loadPlannableRoles } from './org';
 import { reviewStaffing } from './staffing';
+import { companyBrief, reviewCompany } from './company';
 import { scanOutDir } from './artifacts';
 import { quotaUsage } from './quota';
 
@@ -133,6 +134,7 @@ export class Worker {
       if (Date.now() - this.lastScheduleCheck >= SCHEDULE_CHECK_MS) {
         this.lastScheduleCheck = Date.now();
         await runDueSchedules(this.ctx).catch((err) => console.error('[scheduler]', err));
+        await reviewCompany(this.ctx).catch((err) => console.error('[company]', err));
         await reviewStaffing(this.ctx, (id) => {
           const st = this.runtimeState(id);
           return { inflight: st.inflight, concurrency: st.concurrency, blocked: !!st.cooldownUntil || st.quotaBlocked };
@@ -296,7 +298,7 @@ export class Worker {
       // Review menilai hasil kerja, bukan fakta baru; knowledge tidak perlu disertakan.
       const relevant = task.kind === 'review' ? [] : await searchKnowledge(this.ctx.db, `${objective.title} ${task.title} ${task.instructions}`);
       const knowledge = knowledgePromptSection(relevant, task.kind === 'research');
-      const { systemPrompt, prompt } = buildPrompts({ agent, role, task, objective, dependencies, knowledge });
+      const { systemPrompt, prompt } = buildPrompts({ agent, role, task, objective, dependencies, knowledge, company: (await companyBrief(this.ctx.db)) ?? undefined });
       const base = {
         workDir,
         systemPrompt,

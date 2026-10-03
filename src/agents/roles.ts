@@ -231,3 +231,63 @@ export function executionPlanningInstructions(
     `Metrik keberhasilan: ${decision.success_metrics.join('; ')}`,
   ].join('\n');
 }
+
+export interface CompanyBrief {
+  name: string;
+  businessType: string;
+  product: string;
+  audience: string;
+  guidelines: string;
+  forbidden: string;
+}
+
+/** Ringkasan perusahaan yang disisipkan ke prompt semua agent agar bekerja searah. */
+export function companyBriefText(c: CompanyBrief) {
+  return [
+    `Perusahaan: ${c.name || '(tanpa nama)'}`,
+    `Jenis usaha: ${c.businessType}`,
+    `Produk: ${c.product}`,
+    c.audience ? `Target pasar: ${c.audience}` : '',
+    c.guidelines ? `Pedoman Owner: ${c.guidelines}` : '',
+    c.forbidden.trim() ? `Dilarang (jangan dikerjakan atau disebut): ${c.forbidden.split(/\n+/).filter(Boolean).join('; ')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Instruksi task agenda CEO: perusahaan memutuskan sendiri pekerjaan berikutnya, dalam batas Owner. */
+export function agendaInstructions(input: {
+  brief: CompanyBrief;
+  maxNew: number;
+  plannable: PlannableRole[];
+  open: string[];
+  recent: { title: string; status: string; summary: string }[];
+  budget: { monthlyUsd: number; spentUsd: number };
+}) {
+  const roles = input.plannable.map((r) => `- ${r.id}: ${r.description}`).join('\n');
+  return [
+    'Kamu memimpin perusahaan ini secara mandiri. Owner hanya menetapkan jenis usaha, produk, dan batasan; ' +
+      'kamu yang memutuskan pekerjaan apa yang paling berguna berikutnya, seperti CEO sungguhan.',
+    '',
+    '## Tentang perusahaan',
+    companyBriefText(input.brief),
+    '',
+    '## Kapasitas tim (role yang bisa dipakai Manager)',
+    roles,
+    '',
+    '## Sedang berjalan (jangan diduplikasi)',
+    input.open.length ? input.open.map((t) => `- ${t}`).join('\n') : '- (tidak ada)',
+    '',
+    '## Riwayat terbaru',
+    input.recent.length ? input.recent.map((r) => `- [${r.status}] ${r.title}${r.summary ? `: ${r.summary}` : ''}`).join('\n') : '- (belum ada; ini siklus pertama)',
+    '',
+    input.budget.monthlyUsd > 0 ? `## Budget API bulan ini\nTerpakai $${input.budget.spentUsd.toFixed(2)} dari $${input.budget.monthlyUsd.toFixed(2)}.` : '## Budget API\nTidak ada budget API berbayar; pakai kuota langganan secara hemat.',
+    '',
+    '## Yang harus kamu lakukan',
+    `- Pilih paling banyak ${input.maxNew} objective baru yang paling bernilai bagi bisnis ini. Boleh nol bila memang tidak ada yang perlu.`,
+    '- Setiap objective harus konkret dan bisa diselesaikan tim (bukan niat umum). Hindari pekerjaan yang sudah ada di daftar atas.',
+    '- Utamakan mode planned. Pakai strategic hanya untuk keputusan arah besar (memakan banyak kuota).',
+    '- Hormati pedoman dan larangan Owner. Jangan merencanakan tindakan yang butuh akun/credential yang belum disediakan.',
+    '- Lapor ke Owner (escalations) HANYA bila ada hal yang benar-benar tidak bisa diputuskan dalam batas ini. Jangan meminta izin untuk hal rutin.',
+  ].join('\n');
+}

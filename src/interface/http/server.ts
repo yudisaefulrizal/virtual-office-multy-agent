@@ -9,6 +9,7 @@ import { agentSessions, agents, artifacts, knowledge, roles } from '../../db/sch
 import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator/context';
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { applyOrgChange, listOrg } from '../../orchestrator/org';
+import { companyStatus, saveCompany, setCompanyRunning } from '../../orchestrator/company';
 import { createObjective, promoteAllObjectives } from '../../orchestrator/office';
 import { agentPerformance, changeAgentLifecycle } from '../../orchestrator/workforce';
 import { deleteObjective } from '../../orchestrator/cleanup';
@@ -208,6 +209,34 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
   });
 
   app.get('/api/settings', () => getAllSettings(ctx.db));
+
+  // Perusahaan otonom: Owner hanya mengisi piagam, lalu menjalankan atau menjeda.
+  app.get('/api/company', () => companyStatus(ctx));
+  app.put('/api/company', async (req) => {
+    const body = z
+      .object({
+        name: z.string().trim().max(120),
+        businessType: z.string().trim().min(3).max(300),
+        product: z.string().trim().min(3).max(1000),
+        audience: z.string().trim().max(500).default(''),
+        guidelines: z.string().trim().max(2000).default(''),
+        forbidden: z.string().trim().max(1000).default(''),
+        monthlyBudgetUsd: z.number().min(0).max(100000),
+        maxActiveObjectives: z.number().int().min(1).max(5),
+        maxNewPerCycle: z.number().int().min(1).max(5),
+        cycleHours: z.number().int().min(1).max(168),
+        autoPublish: z.boolean(),
+      })
+      .parse(req.body);
+    await saveCompany(ctx, body);
+    return companyStatus(ctx);
+  });
+  app.post('/api/company/:action', async (req) => {
+    const { action } = z.object({ action: z.enum(['start', 'pause']) }).parse(req.params);
+    await setCompanyRunning(ctx, action === 'start', { reason: action === 'pause' ? 'Dijeda Owner' : undefined });
+    void worker.tick();
+    return companyStatus(ctx);
+  });
 
   // Siklus hidup agent oleh Owner: rumahkan, aktifkan kembali, atau pensiunkan (arsip).
   app.post('/api/agents/:id/lifecycle', async (req) => {

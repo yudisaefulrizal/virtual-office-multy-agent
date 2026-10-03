@@ -44,6 +44,14 @@ export class FakeRuntime implements AgentRuntime {
 /** Bentuk output ditebak dari JSON schema yang diminta (planning, review, research, work). */
 async function defaultHandler(req: RunRequest): Promise<Partial<RunResult>> {
   const props = Object.keys((req.outputSchema as { properties?: object }).properties ?? {});
+  if (props.includes('assessment') && props.includes('objectives')) {
+    const max = Number(/Pilih paling banyak (\d+)/.exec(req.prompt)?.[1] ?? 1);
+    const picks = [
+      { title: 'Konten edukasi kopi mingguan', description: 'Buat satu paket konten edukasi tentang kopi lokal untuk minggu ini.', mode: 'planned' as const, rationale: 'Membangun audiens organik.' },
+      { title: 'Riset kompetitor kedai kopi', description: 'Petakan tiga kompetitor terdekat dan celah peluangnya.', mode: 'planned' as const, rationale: 'Dasar strategi konten.' },
+    ];
+    return { output: { assessment: 'Perusahaan baru; mulai dari konten dasar.', objectives: picks.slice(0, max), escalations: [] } };
+  }
   if (props.includes('tasks')) {
     return {
       output: {

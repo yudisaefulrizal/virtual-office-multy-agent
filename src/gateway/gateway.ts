@@ -1,3 +1,4 @@
+import { getCompany } from '../orchestrator/company';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -89,6 +90,10 @@ export class Gateway {
         await tx.insert(toolExecutions).values({ ...base, approvalId, args, status: 'pending_approval' });
         emit({ type: 'approval.requested', entityType: 'approval', entityId: approvalId, objectiveId: caller.objectiveId, actor, payload: { toolId, title: tool.title } });
       });
+      if (await this.autoApprovable(toolId)) {
+        await this.approve(approvalId, 'Disetujui otomatis: perusahaan diizinkan Owner mempublikasikan sendiri.', 'orchestrator');
+        return { ok: true, message: `${tool.title} disetujui otomatis sesuai kebijakan perusahaan dan sedang dijalankan sistem. Lanjutkan task tanpa menunggu.` };
+      }
       return {
         ok: true,
         message: `${tool.title} membutuhkan persetujuan Owner. Permintaan tercatat (approval ${approvalId}) dan akan dijalankan sistem setelah disetujui. Lanjutkan task tanpa menunggu.`,
@@ -152,13 +157,22 @@ export class Gateway {
   }
 
   /** Owner menyetujui: sistem (bukan agent) yang mengeksekusi dengan credential tersimpan. */
-  async approve(approvalId: string, note?: string) {
+  /** Perusahaan otonom boleh menerbitkan sendiri bila Owner mengizinkan dan akses kanal sudah terpasang. */
+  private async autoApprovable(toolId: string) {
+    if (toolId !== 'instagram_publish') return false;
+    const company = await getCompany(this.ctx.db);
+    if (!company?.running || !company.autoPublish) return false;
+    const [cred] = await this.ctx.db.select({ id: toolCredentials.toolId }).from(toolCredentials).where(eq(toolCredentials.toolId, toolId));
+    return !!cred;
+  }
+
+  async approve(approvalId: string, note?: string, actor: 'owner' | 'orchestrator' = 'owner') {
     const [a] = await this.ctx.db.select().from(approvals).where(eq(approvals.id, approvalId));
     if (!a || a.status !== 'pending') throw new UserError('Persetujuan tidak ditemukan atau sudah diputuskan');
     const [exec] = await this.ctx.db.select().from(toolExecutions).where(eq(toolExecutions.approvalId, approvalId));
     await withTx(this.ctx, async (tx, emit) => {
       await tx.update(approvals).set({ status: 'approved', note: note ?? null, decidedAt: new Date() }).where(eq(approvals.id, approvalId));
-      emit({ type: 'approval.approved', entityType: 'approval', entityId: approvalId, objectiveId: a.objectiveId, actor: 'owner', payload: { toolId: a.toolId } });
+      emit({ type: 'approval.approved', entityType: 'approval', entityId: approvalId, objectiveId: a.objectiveId, actor, payload: { toolId: a.toolId } });
     });
     return this.execute(
       { id: exec!.id, toolId: a.toolId!, agentId: a.agentId, taskId: a.taskId, sessionId: exec!.sessionId, objectiveId: a.objectiveId },

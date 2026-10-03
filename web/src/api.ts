@@ -303,6 +303,30 @@ export interface KnowledgeItem {
   stale: boolean;
 }
 
+export interface CompanyCharter {
+  name: string;
+  businessType: string;
+  product: string;
+  audience: string;
+  guidelines: string;
+  forbidden: string;
+  monthlyBudgetUsd: number;
+  maxActiveObjectives: number;
+  maxNewPerCycle: number;
+  cycleHours: number;
+  autoPublish: boolean;
+}
+
+export interface CompanyStatus {
+  company: (CompanyCharter & { running: boolean; pausedReason: string | null; lastAgendaAt: string | null }) | null;
+  state: 'unset' | 'running' | 'paused';
+  waiting: string | null;
+  nextAgendaAt: string | null;
+  spentUsd: number;
+  quota: { used: number; max: number } | null;
+  objectives: { id: string; title: string; status: string; mode: string; createdAt: string }[];
+}
+
 export interface Settings {
   decision_approval: 'always' | 'auto';
   usd_to_idr: number;
@@ -425,6 +449,9 @@ export const api = {
     request<ToolInfo[]>(`/api/tools/${id}/credential`, { method: 'PUT', body: JSON.stringify(body) }),
   setBudget: (id: string, budgetUsd: number | null) =>
     request<{ ok: boolean }>(`/api/objectives/${id}`, { method: 'PATCH', body: JSON.stringify({ budgetUsd }) }),
+  company: () => request<CompanyStatus>('/api/company'),
+  saveCompany: (body: CompanyCharter) => request<CompanyStatus>('/api/company', { method: 'PUT', body: JSON.stringify(body) }),
+  companyAction: (action: 'start' | 'pause') => request<CompanyStatus>(`/api/company/${action}`, { method: 'POST' }),
   resetQuota: () => request<{ ok: boolean }>('/api/quota/reset', { method: 'POST' }),
   deleteObjective: async (id: string) => {
     const res = await fetch(`/api/objectives/${id}`, { method: 'DELETE' });

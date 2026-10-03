@@ -205,3 +205,7 @@ select { font: inherit; padding: 9px 10px; border: 1px solid var(--grey); backgr
   .results-grid { grid-template-columns: minmax(0, 1fr); }
   .results-viewer { position: static; max-height: none; }
 }
+
+/* Halaman Perusahaan */
+.company-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .company-grid { grid-template-columns: minmax(0, 1fr); } }

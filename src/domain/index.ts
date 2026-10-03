@@ -49,7 +49,7 @@ export const Project = stateMachine<ProjectStatus>('Project', {
   cancelled: [],
 });
 
-export type TaskKind = 'framing' | 'consultation' | 'decision' | 'planning' | 'research' | 'work' | 'review';
+export type TaskKind = 'agenda' | 'framing' | 'consultation' | 'decision' | 'planning' | 'research' | 'work' | 'review';
 
 /** waiting_provider: runtime-nya belum dikonfigurasi; aktif otomatis saat provider dipasang. */
 export type AgentStatus = 'active' | 'inactive' | 'waiting_provider';

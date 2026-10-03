@@ -195,7 +195,7 @@ export async function officeView(
       kind: 'owner_notice' as const,
       taskId: String(n.id),
       objectiveId: n.objectiveId ?? '',
-      title: `${nameOf.get(n.actor.slice(6)) ?? 'Agent'}: ${(n.payload as { title?: string }).title ?? ''}`,
+      title: n.actor.startsWith('agent:') ? `${nameOf.get(n.actor.slice(6)) ?? 'Agent'}: ${(n.payload as { title?: string }).title ?? ''}` : String((n.payload as { title?: string }).title ?? 'Pemberitahuan'),
       detail: String((n.payload as { message?: string }).message ?? '').slice(0, 300),
     })),
     ...pendingDecisions.map((d) => ({

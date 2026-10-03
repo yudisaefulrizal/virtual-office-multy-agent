@@ -18,6 +18,7 @@ import { insertTask, promoteReadyTasks } from './office';
 import { hireAgent, loadPlannableRoles } from './org';
 import { getSetting } from './settings';
 import { GONE } from './workforce';
+import { autoApproveBlocker, getCompany } from './company';
 
 type TaskRow = typeof tasks.$inferSelect;
 
@@ -116,7 +117,15 @@ export async function onDecisionCompleted(ctx: OfficeContext, tx: Tx, emit: Emit
   await setObjectiveStatus(tx, task.objectiveId, 'strategizing', 'awaiting_approval');
   emit({ type: 'decision.proposed', entityType: 'decision', entityId: id, objectiveId: task.objectiveId, actor: `agent:${task.assignedAgentId}`, payload: { strategy: proposal.strategy, requests: proposal.owner_requests.length } });
 
-  if ((await getSetting(tx, 'decision_approval')) === 'auto' && !needsOwner(proposal)) {
+  // Perusahaan otonom: keputusan untuk objective buatan sendiri disetujui bila masih dalam batas Owner.
+  const blocker = await autoApproveBlocker(ctx, tx, task.objectiveId, proposal);
+  const [obj] = await tx.select().from(objectives).where(eq(objectives.id, task.objectiveId));
+  const autonomous = (obj?.constraints as { source?: string } | undefined)?.source === 'autopilot' && (await getCompany(tx))?.running;
+  if (autonomous && blocker === null) {
+    await approveTx(ctx, tx, emit, id, 'Disetujui otomatis: dalam batas perusahaan dari Owner.', 'orchestrator');
+  } else if (autonomous) {
+    emit({ type: 'owner.notified', entityType: 'decision', entityId: id, objectiveId: task.objectiveId, actor: 'orchestrator', payload: { title: `Perlu keputusan Anda: ${obj?.title ?? ''}`, message: blocker } });
+  } else if ((await getSetting(tx, 'decision_approval')) === 'auto' && !needsOwner(proposal)) {
     await approveTx(ctx, tx, emit, id, 'Disetujui otomatis (mode persetujuan: otomatis).', 'orchestrator');
   }
 }
