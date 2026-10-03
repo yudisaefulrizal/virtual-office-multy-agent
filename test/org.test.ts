@@ -181,7 +181,7 @@ describe('Organisasi dinamis: divisi dan role baru lewat usulan HRD', () => {
     const org = await listOrg(o.ctx);
     expect(org.departments.map((d) => d.id)).toEqual(['executive', 'rnd', 'operations', 'content']);
     expect(org.departments.find((d) => d.id === 'content')!.roles.map((r) => [r.id, r.staff])).toEqual([['content_writer', 1]]);
-    expect(org.limits).toEqual({ maxStaffPerRole: 3, autoHire: 'auto', hireWaitSeconds: 90 });
+    expect(org.limits).toEqual({ maxStaffPerRole: 3, autoHire: 'auto', hireWaitSeconds: 90, suspendIdleMinutes: 30 });
   });
 
   it('hanya HRD yang punya tool usulan organisasi', async () => {

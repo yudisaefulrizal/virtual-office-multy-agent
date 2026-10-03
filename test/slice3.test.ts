@@ -133,7 +133,7 @@ describe('Slice 3: strategic loop CEO → eksekutif → keputusan → Owner → 
     expect((await objectiveOf(db, objectiveId)).status).toBe('awaiting_approval');
   });
 
-  it('persetujuan menerapkan tim: role tanpa agent aktif → agent baru dari role yang ada', async () => {
+  it('persetujuan menerapkan tim: role tanpa agent aktif → staf dirumahkan dipakai kembali (bukan agent baru)', async () => {
     const { ctx, db, worker } = await office(
       decisionAs(() => ({ ...baseDecision, team: [{ role: 'content_writer', runtime: 'claude-cli', reason: 'Butuh penulis' }] })),
     );
@@ -145,7 +145,9 @@ describe('Slice 3: strategic loop CEO → eksekutif → keputusan → Owner → 
 
     const writers = await db.select().from(agents).where(and(eq(agents.roleId, 'content_writer'), eq(agents.status, 'active')));
     expect(writers).toHaveLength(1);
-    expect(writers[0]).toMatchObject({ name: 'Content Writer 2', createdBy: `decision:${d!.id}` });
+    // Staf yang dirumahkan dipakai ulang lebih dulu, bukan membuat baris baru.
+    expect(writers[0]).toMatchObject({ name: 'Content Writer' });
+    expect(await db.select().from(agents).where(eq(agents.roleId, 'content_writer'))).toHaveLength(1);
   });
 
   it('kerangka CEO gagal → objective gagal', async () => {
