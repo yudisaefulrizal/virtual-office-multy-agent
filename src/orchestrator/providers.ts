@@ -4,7 +4,7 @@ import { agents, providers } from '../db/schema';
 import { UserError } from '../domain';
 import { OpenRouterRuntime } from '../runtimes/openrouter';
 import type { RuntimeId } from '../runtimes/runtime';
-import { type OfficeContext, withTx } from './context';
+import { type OfficeContext, effectiveRuntime, withTx } from './context';
 import { promoteAllObjectives } from './office';
 
 export const PROVIDER_IDS = ['openrouter'] as const;
@@ -79,7 +79,7 @@ export async function updateAgent(
     if (!a) throw new UserError('Agent tidak ditemukan');
     const runtime = input.runtime ?? (a.runtime as RuntimeId);
     let status = input.status ?? (a.status === 'waiting_provider' ? 'active' : a.status);
-    if (status === 'active' && !ctx.runtimes.has(runtime)) status = 'waiting_provider';
+    if (status === 'active' && !ctx.runtimes.has(effectiveRuntime(ctx, runtime))) status = 'waiting_provider';
     const model = input.model !== undefined ? input.model : a.model;
     await tx.update(agents).set({ runtime, model, status }).where(eq(agents.id, id));
     emit({ type: 'agent.updated', entityType: 'agent', entityId: id, actor: 'owner', payload: { name: a.name, runtime, model, status } });

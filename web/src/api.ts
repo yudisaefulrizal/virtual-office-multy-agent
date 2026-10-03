@@ -49,7 +49,7 @@ export interface OfficeEvent {
 }
 
 export interface InboxItem {
-  kind: 'task_failed' | 'task_unassignable' | 'review_escalated';
+  kind: 'task_failed' | 'task_unassignable' | 'review_escalated' | 'decision_pending';
   taskId: string;
   objectiveId: string;
   title: string;
@@ -58,6 +58,7 @@ export interface InboxItem {
 
 export interface OfficeView {
   forceRuntime: string | null;
+  meeting: { objectiveId: string; title: string; participants: string[] } | null;
   agents: OfficeAgent[];
   runtimes: RuntimeInfo[];
   inbox: InboxItem[];
@@ -101,6 +102,7 @@ export interface Artifact {
 export interface TraceTask {
   id: string;
   kind: string;
+  projectId: string | null;
   planKey: string | null;
   dependsOn: string[];
   retryOfTaskId: string | null;
@@ -156,6 +158,49 @@ export interface AgentRow {
   status: string;
 }
 
+export type ObjectiveMode = 'strategic' | 'planned' | 'direct';
+
+export interface Settings {
+  decision_approval: 'always' | 'auto';
+  usd_to_idr: number;
+}
+
+export interface DecisionSummary {
+  id: string;
+  objectiveId: string;
+  objectiveTitle: string;
+  objectiveStatus: string;
+  status: string;
+  proposedBy: string;
+  strategy: string;
+  createdAt: string;
+}
+
+export interface DecisionProposal {
+  strategy: string;
+  success_metrics: string[];
+  budget_cap_usd: number;
+  team: { role: string; runtime: string; reason: string }[];
+  owner_requests: { type: string; key: string; reason: string; amount_usd?: number }[];
+  execution_brief: string;
+}
+
+export interface DecisionDetail {
+  decision: {
+    id: string;
+    objectiveId: string;
+    status: string;
+    content: DecisionProposal;
+    proposedByName: string;
+    reviewNote: string | null;
+    createdAt: string;
+  };
+  objective: { id: string; title: string; description: string; status: string };
+  inputs: { id: string; kind: string; title: string; agentName: string | null; status: string; result: Record<string, any> | null }[];
+  history: { id: string; status: string; createdAt: string; reviewNote: string | null }[];
+  providers: string[];
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -172,10 +217,16 @@ export const api = {
   office: () => request<OfficeView>('/api/office'),
   objectives: () => request<ObjectiveSummary[]>('/api/objectives'),
   objective: (id: string) => request<ObjectiveTrace>(`/api/objectives/${id}`),
-  createObjective: (title: string, description: string, mode: 'planned' | 'direct') =>
+  createObjective: (title: string, description: string, mode: ObjectiveMode) =>
     request<{ objectiveId: string }>('/api/objectives', { method: 'POST', body: JSON.stringify({ title, description, mode }) }),
   cancelTask: (id: string) => request<{ ok: boolean }>(`/api/tasks/${id}/cancel`, { method: 'POST' }),
   providers: () => request<ProviderInfo[]>('/api/providers'),
+  decisions: () => request<DecisionSummary[]>('/api/decisions'),
+  decision: (id: string) => request<DecisionDetail>(`/api/decisions/${id}`),
+  decide: (id: string, action: 'approve' | 'revise' | 'reject', note?: string) =>
+    request<{ ok: boolean }>(`/api/decisions/${id}/${action}`, { method: 'POST', body: JSON.stringify({ note }) }),
+  settings: () => request<Settings>('/api/settings'),
+  updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>
     request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   agents: () => request<AgentRow[]>('/api/agents'),

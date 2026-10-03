@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { TaskKind } from '../domain';
 import type { Capability } from '../runtimes/runtime';
-import { PLANNABLE_ROLES } from './roles';
+import { CONSULTABLE_ROLES, PLANNABLE_ROLES, ROLES } from './roles';
 
 const ArtifactRef = z.strictObject({
   path: z.string().describe('Path relatif, diawali out/'),
@@ -61,6 +61,65 @@ export const ReviewOutput = z.strictObject({
 });
 export type Review = z.infer<typeof ReviewOutput>;
 
+const consultable = Object.keys(CONSULTABLE_ROLES) as [string, ...string[]];
+
+/** Output task `framing` (CEO): visi + pertanyaan selektif ke eksekutif/R&D. */
+export const FramingOutput = z.strictObject({
+  vision: z.string().min(1).describe('Visi dan arah besar untuk objective ini'),
+  questions: z
+    .array(z.strictObject({ to: z.enum(consultable), question: z.string().min(10) }))
+    .max(4)
+    .describe('Konsultasi yang benar-benar dibutuhkan; kosongkan bila tidak perlu'),
+});
+export type Framing = z.infer<typeof FramingOutput>;
+
+/** Output task `consultation` (CFO/CTO/HRD): analisis dengan alternatif, bukan sekadar menolak. */
+export const ConsultationOutput = z.strictObject({
+  analysis: z.string().min(1),
+  risks: z.array(z.string()),
+  recommendation: z.string().min(1),
+  alternatives: z.array(z.string()).describe('Alternatif yang lebih feasible, wajib minimal satu'),
+});
+
+const roleIdsAll = ROLES.filter((r) => r.id !== 'ceo').map((r) => r.id) as [string, ...string[]];
+
+/** Output task `decision` (CEO): usulan keputusan yang menunggu persetujuan Owner. */
+export const DecisionOutput = z.strictObject({
+  strategy: z.string().min(1),
+  success_metrics: z.array(z.string()).min(1),
+  budget_cap_usd: z.number().min(0).describe('Batas biaya API untuk objective ini; 0 = tanpa batas tambahan'),
+  team: z
+    .array(
+      z.strictObject({
+        role: z.enum(roleIdsAll).describe('Hanya role yang sudah ada'),
+        runtime: z.enum(['claude-cli', 'openrouter']),
+        reason: z.string().min(1),
+      }),
+    )
+    .describe('Susunan tim yang dibutuhkan (usulan HRD, dirangkum CEO)'),
+  owner_requests: z
+    .array(
+      z.strictObject({
+        type: z.enum(['provider', 'budget', 'tool', 'other']),
+        key: z.string().min(1).describe('mis. openrouter, instagram'),
+        reason: z.string().min(1),
+        amount_usd: z.number().min(0).optional(),
+      }),
+    )
+    .describe('Hal yang perlu disediakan Owner. Jangan pernah meminta API key ditulis di sini.'),
+  execution_brief: z.string().min(1).describe('Arahan untuk Manager saat menyusun rencana kerja'),
+});
+export type DecisionProposal = z.infer<typeof DecisionOutput>;
+
+export function checkFraming(f: Framing): string | null {
+  const seen = new Set<string>();
+  for (const q of f.questions) {
+    if (seen.has(q.to)) return `Pertanyaan untuk ${q.to} ganda; gabungkan menjadi satu`;
+    seen.add(q.to);
+  }
+  return null;
+}
+
 /** Validasi semantik setelah schema lolos. Mengembalikan pesan error, atau null. */
 export function checkPlan(plan: Plan): string | null {
   const keys = new Set<string>();
@@ -117,7 +176,31 @@ export const TASK_KINDS: Partial<Record<TaskKind, KindSpec>> = {
   research: { schema: ResearchOutput, requires: ['structured_output', 'workspace_files', 'web_research'], timeoutMs: 900_000 },
   planning: { schema: PlanOutput, requires: ['structured_output'], timeoutMs: 300_000, check: checkPlan },
   review: { schema: ReviewOutput, requires: ['structured_output', 'workspace_files'], timeoutMs: 300_000, check: checkReview },
+  framing: { schema: FramingOutput, requires: ['structured_output'], timeoutMs: 300_000, check: checkFraming },
+  consultation: { schema: ConsultationOutput, requires: ['structured_output'], timeoutMs: 300_000 },
+  decision: { schema: DecisionOutput, requires: ['structured_output'], timeoutMs: 300_000 },
 };
+
+/**
+ * Ringkasan hasil task untuk diteruskan ke task berikutnya lewat prompt.
+ * Penting untuk runtime API yang tidak bisa membaca file context/.
+ */
+export function resultDigest(kind: string, result: unknown): string {
+  const r = (result ?? {}) as Record<string, any>;
+  const list = (xs: unknown, label: string) => (Array.isArray(xs) && xs.length ? `\n${label}:\n${xs.map((x) => `- ${typeof x === 'string' ? x : x.point ? `${x.point} (${x.source})` : JSON.stringify(x)}`).join('\n')}` : '');
+  switch (kind) {
+    case 'consultation':
+      return `Rekomendasi: ${r.recommendation}\nAnalisis: ${r.analysis}${list(r.risks, 'Risiko')}${list(r.alternatives, 'Alternatif')}`;
+    case 'research':
+      return `${r.summary ?? ''}${list(r.findings, 'Temuan')}`;
+    case 'framing':
+      return `Visi: ${r.vision}`;
+    case 'decision':
+      return `Strategi: ${r.strategy}\nArahan: ${r.execution_brief}`;
+    default:
+      return r.summary ?? '';
+  }
+}
 
 export function kindSpec(kind: string): KindSpec {
   const spec = TASK_KINDS[kind as TaskKind];

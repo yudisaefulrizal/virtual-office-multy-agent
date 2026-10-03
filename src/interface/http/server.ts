@@ -7,16 +7,18 @@ import Fastify from 'fastify';
 import { UserError } from '../../domain';
 import { z } from 'zod';
 import { agentSessions, agents, artifacts, roles } from '../../db/schema';
-import type { OfficeContext, StoredEvent } from '../../orchestrator/context';
+import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator/context';
 import { createObjective } from '../../orchestrator/office';
 import { PROVIDER_IDS, listProviders, setProvider, updateAgent } from '../../orchestrator/providers';
-import { listObjectives, objectiveTrace, officeView } from '../../orchestrator/queries';
+import { decisionDetail, listDecisions, listObjectives, objectiveTrace, officeView } from '../../orchestrator/queries';
+import { type SettingKey, getAllSettings, setSetting } from '../../orchestrator/settings';
+import { approveDecision, rejectDecision, reviseDecision } from '../../orchestrator/strategy';
 import type { Worker } from '../../orchestrator/worker';
 
 const CreateObjectiveBody = z.object({
   title: z.string().trim().min(3).max(200),
   description: z.string().trim().max(5000).optional(),
-  mode: z.enum(['planned', 'direct']).optional(),
+  mode: z.enum(['strategic', 'planned', 'direct']).optional(),
 });
 const IdParams = z.object({ id: z.uuid() });
 
@@ -71,6 +73,45 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
       .parse(req.body);
     await updateAgent(ctx, id, body);
     return { ok: true };
+  });
+
+  app.get('/api/decisions', () => listDecisions(ctx));
+  app.get('/api/decisions/:id', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    return (await decisionDetail(ctx, id)) ?? reply.status(404).send({ error: 'Keputusan tidak ditemukan' });
+  });
+  const NoteBody = z.object({ note: z.string().trim().max(5000).optional() });
+  app.post('/api/decisions/:id/approve', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await approveDecision(ctx, id, NoteBody.parse(req.body ?? {}).note);
+    void worker.tick();
+    return { ok: true };
+  });
+  app.post('/api/decisions/:id/revise', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await reviseDecision(ctx, id, NoteBody.parse(req.body ?? {}).note ?? '');
+    void worker.tick();
+    return { ok: true };
+  });
+  app.post('/api/decisions/:id/reject', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    await rejectDecision(ctx, id, NoteBody.parse(req.body ?? {}).note);
+    return { ok: true };
+  });
+
+  app.get('/api/settings', () => getAllSettings(ctx.db));
+  app.put('/api/settings', async (req) => {
+    const body = z
+      .object({ decision_approval: z.enum(['always', 'auto']).optional(), usd_to_idr: z.number().positive().max(1_000_000).optional() })
+      .parse(req.body);
+    await withTx(ctx, async (tx, emit) => {
+      for (const [k, v] of Object.entries(body)) {
+        if (v === undefined) continue;
+        await setSetting(tx, k as SettingKey, v as never);
+        emit({ type: 'setting.updated', entityType: 'setting', entityId: k, actor: 'owner', payload: { value: v } });
+      }
+    });
+    return getAllSettings(ctx.db);
   });
 
   app.post('/api/tasks/:id/cancel', async (req, reply) => {

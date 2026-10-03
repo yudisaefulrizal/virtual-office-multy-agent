@@ -267,12 +267,14 @@ export function OfficeScene({
   agents,
   runtimes,
   events,
+  meeting,
   selectedId,
   onSelect,
 }: {
   agents: OfficeAgent[];
   runtimes: RuntimeInfo[];
   events: OfficeEvent[];
+  meeting: { objectiveId: string; title: string } | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -306,6 +308,20 @@ export function OfficeScene({
       anchor: 'center',
       node: <span className="sign">{r.name}</span>,
     })),
+    ...(meeting
+      ? [
+          {
+            key: 'meeting',
+            at: [5, 1.6, 3.3] as [number, number, number],
+            anchor: 'above' as const,
+            node: (
+              <a className="bubble warn" href={`#/objectives/${meeting.objectiveId}`} style={{ pointerEvents: 'auto', textDecoration: 'none' }}>
+                Rapat strategi: {meeting.title}
+              </a>
+            ),
+          },
+        ]
+      : []),
     ...runtimes.slice(0, 3).map((r, i): Label => ({
       key: `rack-${r.id}`,
       at: [17.95, 1.85, rackZ(i) + 0.45],

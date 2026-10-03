@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, useLive, type Artifact, type TraceTask } from '../api';
-import { KIND_LABEL, SESSION_STATUS, TASK_STATUS, dateTime, duration, eventText, time, tokens, usd } from '../format';
+import { DECISION_STATUS, KIND_LABEL, SESSION_STATUS, TASK_STATUS, dateTime, duration, eventText, time, tokens, usd } from '../format';
 
 export function ObjectivePage({ id }: { id: string }) {
   const { data, error } = useLive(() => api.objective(id), [id]);
@@ -45,6 +45,23 @@ export function ObjectivePage({ id }: { id: string }) {
         ))}
       </dl>
 
+      {decisions.some((d) => d.proposedBy !== 'owner') && (
+        <section className="card" aria-labelledby="decisions">
+          <h2 id="decisions">Keputusan CEO</h2>
+          {decisions.filter((d) => d.proposedBy !== 'owner').map((d) => {
+            const ds = DECISION_STATUS[d.status] ?? DECISION_STATUS.proposed!;
+            return (
+              <a key={d.id} href={`#/decisions/${d.id}`} className="row wrap" style={{ gap: 8, textDecoration: 'none', color: 'var(--ink)' }}>
+                <span className={`dot ${ds.dot}`} />
+                <strong style={{ color: ds.tone }}>{ds.label}</strong>
+                <span>{d.content.strategy}</span>
+                <span className="small muted">{dateTime(d.createdAt)}</span>
+              </a>
+            );
+          })}
+        </section>
+      )}
+
       {tasks.length > 1 && (
         <section className="card" aria-labelledby="pipeline">
           <div className="row wrap between">
@@ -88,11 +105,14 @@ function stages(tasks: TraceTask[]) {
     memo.set(t.id, l);
     return l;
   };
-  // Task hasil rencana tidak bergantung formal pada task perencanaan, tapi selalu sesudahnya.
-  const planning = tasks.find((t) => t.kind === 'planning');
+  // Fase: strategi (tanpa project) → perencanaan → eksekusi. Task hasil rencana tidak
+  // bergantung formal pada perencanaan/keputusan, tapi selalu sesudahnya.
+  const strategic = tasks.filter((t) => !t.projectId);
+  const strategicDepth = strategic.length ? Math.max(...strategic.map(level)) + 1 : 0;
+  const hasPlanning = tasks.some((t) => t.kind === 'planning');
   const grouped: TraceTask[][] = [];
   for (const t of tasks) {
-    const l = level(t) + (planning && t !== planning ? 1 : 0);
+    const l = !t.projectId ? level(t) : strategicDepth + (t.kind === 'planning' ? 0 : level(t) + (hasPlanning ? 1 : 0));
     (grouped[l] ??= []).push(t);
   }
   return grouped.filter(Boolean);

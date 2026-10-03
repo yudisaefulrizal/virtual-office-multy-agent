@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, useLive } from './api';
+import { DecisionPage, DecisionsPage } from './pages/DecisionPage';
 import { ObjectivePage } from './pages/ObjectivePage';
 import { ObjectivesPage } from './pages/ObjectivesPage';
 import { OfficePage } from './pages/OfficePage';
@@ -50,10 +51,23 @@ function QuotaMeter() {
   );
 }
 
+function PendingBadge() {
+  const { data } = useLive(api.decisions);
+  const n = data?.filter((d) => d.status === 'proposed').length ?? 0;
+  return n > 0 ? <span className="badge" aria-label={`${n} menunggu`}>{n}</span> : null;
+}
+
 export function App() {
   const route = useHashRoute();
   const objectiveMatch = route.match(/^\/objectives\/([0-9a-f-]{36})$/);
-  const section = route.startsWith('/objectives') ? 'objectives' : route.startsWith('/settings') ? 'settings' : 'office';
+  const decisionMatch = route.match(/^\/decisions\/([0-9a-f-]{36})$/);
+  const section = route.startsWith('/objectives')
+    ? 'objectives'
+    : route.startsWith('/decisions')
+      ? 'decisions'
+      : route.startsWith('/settings')
+        ? 'settings'
+        : 'office';
 
   return (
     <>
@@ -76,6 +90,9 @@ export function App() {
             <a href="#/objectives" aria-current={section === 'objectives' ? 'page' : undefined}>
               Objective
             </a>
+            <a href="#/decisions" aria-current={section === 'decisions' ? 'page' : undefined} className="row" style={{ gap: 8 }}>
+              Keputusan <PendingBadge />
+            </a>
             <a href="#/settings" aria-current={section === 'settings' ? 'page' : undefined}>
               Pengaturan
             </a>
@@ -85,6 +102,10 @@ export function App() {
       </header>
       {objectiveMatch ? (
         <ObjectivePage id={objectiveMatch[1]!} />
+      ) : decisionMatch ? (
+        <DecisionPage id={decisionMatch[1]!} />
+      ) : section === 'decisions' ? (
+        <DecisionsPage />
       ) : section === 'objectives' ? (
         <ObjectivesPage />
       ) : section === 'settings' ? (

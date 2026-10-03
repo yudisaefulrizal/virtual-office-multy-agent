@@ -9,11 +9,12 @@ import {
   reviewInstructions,
   revisionInstructions,
 } from '../agents/roles';
-import { kindSpec, topoOrder, type Plan, type Review } from '../agents/schemas';
+import { kindSpec, topoOrder, type DecisionProposal, type Framing, type Plan, type Review } from '../agents/schemas';
 import type { Tx } from '../db/client';
 import { agents, decisions, objectives, projects, roles, taskDependencies, tasks } from '../db/schema';
 import { Objective, Project, type Actor, type ObjectiveStatus, type ProjectStatus, type TaskKind, type TaskStatus } from '../domain';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
+import { onDecisionCompleted, onFramingCompleted, onStrategicTaskFinished, startStrategicLoop } from './strategy';
 
 type TaskRow = typeof tasks.$inferSelect;
 
@@ -71,9 +72,10 @@ export async function pickAgent(ctx: OfficeContext, tx: Tx, roleId: string, kind
   return capable[0]?.id ?? null;
 }
 
-interface NewTask {
+export interface NewTask {
   objectiveId: string;
-  projectId: string;
+  /** null untuk task strategis (framing, konsultasi, keputusan) yang mendahului project. */
+  projectId: string | null;
   kind: TaskKind;
   title: string;
   instructions: string;
@@ -86,7 +88,7 @@ interface NewTask {
 }
 
 /** Task baru selalu `pending`; promoteReadyTasks yang memasukkannya ke antrean. */
-async function insertTask(tx: Tx, emit: Emit, t: NewTask) {
+export async function insertTask(tx: Tx, emit: Emit, t: NewTask) {
   const id = randomUUID();
   await tx.insert(tasks).values({
     id,
@@ -146,12 +148,15 @@ export async function promoteReadyTasks(ctx: OfficeContext, tx: Tx, emit: Emit, 
   }
 }
 
-export type ObjectiveMode = 'planned' | 'direct';
+export type ObjectiveMode = 'strategic' | 'planned' | 'direct';
 
 export interface CreateObjectiveInput {
   title: string;
   description?: string;
-  /** planned: Manager menyusun rencana + review. direct: satu task untuk Content Writer (hemat kuota). */
+  /**
+   * strategic: CEO + konsultasi eksekutif → keputusan → persetujuan Owner → Manager.
+   * planned: Manager menyusun rencana + review. direct: satu task untuk Content Writer (hemat kuota).
+   */
   mode?: ObjectiveMode;
 }
 
@@ -169,6 +174,12 @@ export async function createObjective(ctx: OfficeContext, input: CreateObjective
 
     await tx.insert(objectives).values({ id: objectiveId, title: input.title, description, status: 'new', constraints: { mode } });
     emit({ type: 'objective.created', entityType: 'objective', entityId: objectiveId, objectiveId, actor: 'owner', payload: { title: input.title, mode } });
+
+    if (mode === 'strategic') {
+      const taskId = await startStrategicLoop(tx, emit, objectiveId);
+      await promoteReadyTasks(ctx, tx, emit, objectiveId);
+      return { objectiveId, projectId: null, taskId };
+    }
 
     await tx.insert(decisions).values({
       id: decisionId,
@@ -213,6 +224,9 @@ export async function onTaskCompleted(ctx: OfficeContext, tx: Tx, emit: Emit, ta
   if (task.projectId) {
     if (task.kind === 'planning') await materializePlan(tx, emit, task, result as Plan);
     if (task.kind === 'review') await handleReview(tx, emit, task, result as Review);
+  } else {
+    if (task.kind === 'framing') await onFramingCompleted(tx, emit, task, result as Framing);
+    if (task.kind === 'decision') await onDecisionCompleted(ctx, tx, emit, task, result as DecisionProposal);
   }
   await promoteReadyTasks(ctx, tx, emit, task.objectiveId);
   await onTaskFinished(tx, emit, task);
@@ -220,20 +234,18 @@ export async function onTaskCompleted(ctx: OfficeContext, tx: Tx, emit: Emit, ta
 
 /** Task gagal atau dibatalkan: task yang bergantung padanya tidak mungkin jalan, jadi ikut dibatalkan. */
 export async function onTaskAborted(tx: Tx, emit: Emit, task: TaskRow) {
-  if (task.projectId) {
-    let blocked = [task.id];
-    while (blocked.length > 0) {
-      const dependents = await tx
-        .select({ id: tasks.id, objectiveId: tasks.objectiveId })
-        .from(taskDependencies)
-        .innerJoin(tasks, eq(tasks.id, taskDependencies.taskId))
-        .where(and(inArray(taskDependencies.dependsOn, blocked), eq(tasks.status, 'pending')));
-      blocked = [];
-      for (const d of dependents) {
-        await tx.update(tasks).set({ status: 'cancelled', error: 'Dependency gagal atau dibatalkan', completedAt: new Date() }).where(eq(tasks.id, d.id));
-        emit({ type: 'task.cancelled', entityType: 'task', entityId: d.id, objectiveId: d.objectiveId, actor: 'orchestrator', payload: { reason: 'dependency' } });
-        blocked.push(d.id);
-      }
+  let blocked = [task.id];
+  while (blocked.length > 0) {
+    const dependents = await tx
+      .select({ id: tasks.id, objectiveId: tasks.objectiveId })
+      .from(taskDependencies)
+      .innerJoin(tasks, eq(tasks.id, taskDependencies.taskId))
+      .where(and(inArray(taskDependencies.dependsOn, blocked), eq(tasks.status, 'pending')));
+    blocked = [];
+    for (const d of dependents) {
+      await tx.update(tasks).set({ status: 'cancelled', error: 'Dependency gagal atau dibatalkan', completedAt: new Date() }).where(eq(tasks.id, d.id));
+      emit({ type: 'task.cancelled', entityType: 'task', entityId: d.id, objectiveId: d.objectiveId, actor: 'orchestrator', payload: { reason: 'dependency' } });
+      blocked.push(d.id);
     }
   }
   await onTaskFinished(tx, emit, task);
@@ -341,7 +353,7 @@ async function handleReview(tx: Tx, emit: Emit, review: TaskRow, result: Review)
  * (Recurring objective: Phase 7.)
  */
 export async function onTaskFinished(tx: Tx, emit: Emit, task: { projectId: string | null; objectiveId: string }) {
-  if (!task.projectId) return;
+  if (!task.projectId) return onStrategicTaskFinished(tx, emit, task.objectiveId);
   const rows = await tx.select({ status: tasks.status }).from(tasks).where(eq(tasks.projectId, task.projectId));
   const statuses = rows.map((r) => r.status as TaskStatus);
   const terminal = ['completed', 'failed', 'cancelled'];

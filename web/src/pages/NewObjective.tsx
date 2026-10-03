@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { api } from '../api';
+import { api, type ObjectiveMode } from '../api';
 
 export function NewObjective() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [mode, setMode] = useState<'planned' | 'direct'>('planned');
+  const [mode, setMode] = useState<ObjectiveMode>('planned');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +50,13 @@ export function NewObjective() {
       <fieldset className="field" style={{ border: 0, padding: 0, margin: 0 }}>
         <legend style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>Cara kerja</legend>
         <label className="choice">
+          <input type="radio" name="mode" checked={mode === 'strategic'} onChange={() => setMode('strategic')} />
+          <span>
+            <strong>Strategis</strong>
+            <span className="small muted">CEO menyusun visi, konsultasi tim eksekutif, lalu mengusulkan keputusan untuk Anda setujui. ±7–10 run (lebih hemat bila eksekutif di OpenRouter).</span>
+          </span>
+        </label>
+        <label className="choice">
           <input type="radio" name="mode" checked={mode === 'planned'} onChange={() => setMode('planned')} />
           <span>
             <strong>Terencana</strong>
@@ -68,9 +75,6 @@ export function NewObjective() {
       <button className="btn" type="submit" disabled={busy || title.trim().length < 3}>
         {busy ? 'Mengirim…' : 'Kirim ke kantor'}
       </button>
-      <p className="small muted" style={{ margin: 0 }}>
-        Strategi CEO dan rapat eksekutif menyusul di tahap berikutnya.
-      </p>
     </form>
   );
 }

@@ -47,7 +47,7 @@ export function OfficePage() {
           </div>
           <div className="scene-canvas">
             <Suspense fallback={<p style={{ padding: 20 }}>Menyiapkan kantor 3D…</p>}>
-              <OfficeScene agents={data.agents} runtimes={data.runtimes} events={data.events} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
+              <OfficeScene agents={data.agents} runtimes={data.runtimes} events={data.events} meeting={data.meeting} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
             </Suspense>
           </div>
           <div className="scene-foot">
@@ -69,9 +69,15 @@ export function OfficePage() {
           <section className="card" aria-labelledby="inbox">
             <h2 id="inbox">Perlu Anda</h2>
             {data.inbox.map((i) => (
-              <a key={i.taskId} href={`#/objectives/${i.objectiveId}`} className="notice" style={{ color: 'var(--ink)', textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <a key={i.taskId} href={i.kind === 'decision_pending' ? `#/decisions/${i.taskId}` : `#/objectives/${i.objectiveId}`} className="notice" style={{ color: 'var(--ink)', textDecoration: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <span style={{ fontWeight: 600 }}>
-                  {i.kind === 'task_failed' ? `Task gagal: ${i.title}` : i.kind === 'review_escalated' ? `Perlu keputusan Anda: ${i.title}` : `Belum ada agent: ${i.title}`}
+                  {i.kind === 'task_failed'
+                    ? `Task gagal: ${i.title}`
+                    : i.kind === 'review_escalated'
+                      ? `Perlu keputusan Anda: ${i.title}`
+                      : i.kind === 'decision_pending'
+                        ? `Keputusan CEO menunggu: ${i.title}`
+                        : `Belum ada agent: ${i.title}`}
                 </span>
                 <span className="small muted">{i.detail}</span>
               </a>

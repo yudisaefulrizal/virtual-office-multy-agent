@@ -3,7 +3,7 @@ import { copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import { buildPrompts, repairPrompt, type DependencyContext } from '../agents/prompt';
-import { jsonSchemaFor, kindSpec } from '../agents/schemas';
+import { jsonSchemaFor, kindSpec, resultDigest } from '../agents/schemas';
 import { agentSessions, agents, artifacts, objectives, roles, taskDependencies, tasks } from '../db/schema';
 import { Task, type TaskStatus } from '../domain';
 import type { AgentRuntime, NativeToolPolicy, RunRequest, RunResult, RuntimeId } from '../runtimes/runtime';
@@ -398,7 +398,7 @@ export class Worker {
         key,
         title: dep.title,
         agentName: agentName ?? 'Agent',
-        summary: (dep.result as { summary?: string } | null)?.summary ?? '',
+        summary: resultDigest(dep.kind, dep.result),
         files: copied,
       });
     }

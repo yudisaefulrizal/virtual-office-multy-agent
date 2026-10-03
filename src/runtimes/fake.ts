@@ -56,6 +56,32 @@ async function defaultHandler(req: RunRequest): Promise<Partial<RunResult>> {
       },
     };
   }
+  if (props.includes('questions')) {
+    return {
+      output: {
+        vision: 'Bangun kehadiran konten yang konsisten dan berkualitas.',
+        questions: [
+          { to: 'researcher', question: 'Format konten apa yang paling relevan untuk objective ini?' },
+          { to: 'cfo', question: 'Berapa perkiraan biaya dan kuota per bulan?' },
+        ],
+      },
+    };
+  }
+  if (props.includes('execution_brief')) {
+    return {
+      output: {
+        strategy: 'Content-first organik, satu konten berkualitas per hari.',
+        success_metrics: ['1 konten siap publish per hari'],
+        budget_cap_usd: 5,
+        team: [{ role: 'content_writer', runtime: 'claude-cli', reason: 'Menulis konten ke file' }],
+        owner_requests: [],
+        execution_brief: 'Riset singkat lalu tulis konten.',
+      },
+    };
+  }
+  if (props.includes('recommendation')) {
+    return { output: { analysis: 'Analisis fake.', risks: ['Kuota terbatas'], recommendation: 'Mulai kecil.', alternatives: ['Pakai OpenRouter untuk konsultasi'] } };
+  }
   if (props.includes('verdict')) {
     return { output: { verdict: 'accept', feedback: 'Hasil sesuai objective.', revisions: [] } };
   }

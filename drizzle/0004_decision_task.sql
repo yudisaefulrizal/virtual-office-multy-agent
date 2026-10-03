@@ -1,0 +1,1 @@
+ALTER TABLE `decisions` ADD `task_id` varchar(36);

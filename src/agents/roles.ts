@@ -153,3 +153,60 @@ export function revisionInstructions(original: string, feedback: string, specifi
     `Versi sebelumnya ada di context/${key}/. Perbaiki dan simpan hasil baru di out/.`,
   ].join('\n');
 }
+
+/** Siapa yang boleh dikonsultasi CEO, dan task kind-nya. R&D menyediakan evidence (riset web). */
+export const CONSULTABLE_ROLES: Record<string, { kind: 'consultation' | 'research'; focus: string }> = {
+  cfo: { kind: 'consultation', focus: 'biaya, kuota, resource, ROI' },
+  cto: { kind: 'consultation', focus: 'teknologi, keamanan, reliability, integrasi' },
+  hrd: { kind: 'consultation', focus: 'struktur tim dan kebutuhan agent' },
+  researcher: { kind: 'research', focus: 'evidence dan data dari riset' },
+};
+
+export function framingInstructions() {
+  const roles = Object.entries(CONSULTABLE_ROLES)
+    .map(([id, r]) => `- ${id}: ${r.focus}`)
+    .join('\n');
+  return [
+    'Pahami objective dari Owner dan kembangkan visi besarnya lebih dulu.',
+    '',
+    'Lalu tentukan konsultasi yang benar-benar dibutuhkan sebelum mengambil keputusan:',
+    roles,
+    '',
+    '- Konsultasi bersifat selektif: setiap konsultasi memakai kuota. Jangan bertanya ke semua bila tidak relevan.',
+    '- Tulis pertanyaan yang spesifik untuk tiap role.',
+  ].join('\n');
+}
+
+export function consultationInstructions(question: string, vision: string) {
+  return [
+    `CEO meminta analisismu: ${question}`,
+    '',
+    `Visi CEO: ${vision}`,
+    '',
+    'Berikan analisis, risiko, rekomendasi, dan alternatif yang lebih feasible. Jangan hanya menolak; tawarkan jalan keluar.',
+  ].join('\n');
+}
+
+export function decisionInstructions(ownerFeedback?: string) {
+  return [
+    'Ambil keputusan strategis berdasarkan visimu dan hasil konsultasi tim.',
+    '',
+    '- Usulan ini menunggu persetujuan Owner sebelum dijalankan.',
+    '- Tim hanya boleh memakai role yang sudah ada. Pilih runtime openrouter untuk role yang cukup bernalar (hemat kuota Claude), claude-cli untuk yang butuh file atau riset web.',
+    '- Tuliskan di owner_requests hal yang perlu Owner sediakan (provider, budget, akses tool). Jangan pernah meminta API key dituliskan.',
+    '- execution_brief adalah arahan untuk Manager menyusun rencana kerja.',
+    ownerFeedback ? `\n## Catatan revisi dari Owner\n\n${ownerFeedback}` : '',
+  ].join('\n');
+}
+
+export function executionPlanningInstructions(decision: { strategy: string; execution_brief: string; success_metrics: string[] }) {
+  return [
+    planningInstructions(),
+    '',
+    '## Keputusan CEO yang sudah disetujui Owner',
+    '',
+    `Strategi: ${decision.strategy}`,
+    `Arahan untuk Manager: ${decision.execution_brief}`,
+    `Metrik keberhasilan: ${decision.success_metrics.join('; ')}`,
+  ].join('\n');
+}

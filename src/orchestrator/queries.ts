@@ -136,7 +136,20 @@ export async function officeView(
       ? (await db.select({ id: objectives.id, title: objectives.title }).from(objectives).where(inArray(objectives.id, escalated.map((e) => e.objectiveId!)))).map((o) => [o.id, o.title])
       : [],
   );
+  const pendingDecisions = await db
+    .select({ id: decisions.id, objectiveId: decisions.objectiveId, title: objectives.title, content: decisions.content })
+    .from(decisions)
+    .innerJoin(objectives, eq(objectives.id, decisions.objectiveId))
+    .where(eq(decisions.status, 'proposed'))
+    .orderBy(desc(decisions.createdAt));
   const inbox = [
+    ...pendingDecisions.map((d) => ({
+      kind: 'decision_pending' as const,
+      taskId: d.id,
+      objectiveId: d.objectiveId,
+      title: d.title,
+      detail: `CEO mengusulkan: ${(d.content as { strategy?: string }).strategy ?? ''}`.slice(0, 240),
+    })),
     ...escalated.map((e) => ({
       kind: 'review_escalated' as const,
       taskId: e.entityId,
@@ -152,8 +165,20 @@ export async function officeView(
       .map((t) => ({ kind: 'task_unassignable' as const, taskId: t.id, objectiveId: t.objectiveId, title: t.title, detail: t.error ?? `Butuh role ${t.requiredRoleId}` })),
   ];
 
+  // Rapat strategi: ada task framing/konsultasi/keputusan yang sedang berjalan.
+  const strategic = openTasks.find((t) => ['framing', 'consultation', 'decision'].includes(t.kind) && t.status === 'running')
+    ?? openTasks.find((t) => ['framing', 'consultation', 'decision'].includes(t.kind));
+  const meeting = strategic
+    ? {
+        objectiveId: strategic.objectiveId,
+        title: (await db.select({ title: objectives.title }).from(objectives).where(eq(objectives.id, strategic.objectiveId)))[0]?.title ?? '',
+        participants: [...new Set(openTasks.filter((t) => t.objectiveId === strategic.objectiveId && !t.projectId).map((t) => t.assignedAgentId).filter(Boolean))] as string[],
+      }
+    : null;
+
   return {
     forceRuntime: ctx.forceRuntime ?? null,
+    meeting,
     agents: agentsOut,
     runtimes: runtimesOut,
     inbox,
@@ -245,5 +270,51 @@ export async function objectiveTrace(ctx: OfficeContext, id: string) {
     })),
     usage,
     events: await recentEvents(ctx, 200, id),
+  };
+}
+
+export async function listDecisions(ctx: OfficeContext) {
+  const rows = await ctx.db
+    .select({ decision: decisions, objectiveTitle: objectives.title, objectiveStatus: objectives.status })
+    .from(decisions)
+    .innerJoin(objectives, eq(objectives.id, decisions.objectiveId))
+    .orderBy(desc(decisions.createdAt))
+    .limit(100);
+  return rows.map((r) => ({
+    id: r.decision.id,
+    objectiveId: r.decision.objectiveId,
+    objectiveTitle: r.objectiveTitle,
+    objectiveStatus: r.objectiveStatus,
+    status: r.decision.status,
+    proposedBy: r.decision.proposedBy,
+    strategy: (r.decision.content as { strategy?: string }).strategy ?? '',
+    createdAt: r.decision.createdAt.toISOString(),
+  }));
+}
+
+/** Usulan keputusan beserta bahan pertimbangannya: kerangka CEO dan hasil konsultasi. */
+export async function decisionDetail(ctx: OfficeContext, id: string) {
+  const db = ctx.db;
+  const [d] = await db.select().from(decisions).where(eq(decisions.id, id));
+  if (!d) return null;
+  const [objective] = await db.select().from(objectives).where(eq(objectives.id, d.objectiveId));
+  const inputs = d.taskId
+    ? await db
+        .select({ task: tasks, agentName: agents.name })
+        .from(taskDependencies)
+        .innerJoin(tasks, eq(tasks.id, taskDependencies.dependsOn))
+        .leftJoin(agents, eq(agents.id, tasks.assignedAgentId))
+        .where(eq(taskDependencies.taskId, d.taskId))
+    : [];
+  const history = await db.select().from(decisions).where(eq(decisions.objectiveId, d.objectiveId)).orderBy(asc(decisions.createdAt));
+  const ceo = d.proposedBy.startsWith('agent:')
+    ? (await db.select({ name: agents.name }).from(agents).where(eq(agents.id, d.proposedBy.slice(6))))[0]?.name
+    : 'Owner';
+  return {
+    decision: { ...d, proposedByName: ceo ?? 'Agent' },
+    objective,
+    inputs: inputs.map((i) => ({ id: i.task.id, kind: i.task.kind, title: i.task.title, agentName: i.agentName, status: i.task.status, result: i.task.result })),
+    history: history.map((h) => ({ id: h.id, status: h.status, createdAt: h.createdAt.toISOString(), reviewNote: h.reviewNote })),
+    providers: [...ctx.runtimes.keys()],
   };
 }

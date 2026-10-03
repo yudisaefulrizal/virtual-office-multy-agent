@@ -57,6 +57,17 @@ const EVENT_TEXT: Record<string, string> = {
   'artifact.created': 'menyimpan artifact',
   'agent.created': 'merekrut agent',
   'plan.created': 'menyusun rencana kerja',
+  'objective.strategizing': 'memulai rapat strategi',
+  'strategy.consultations_requested': 'meminta konsultasi tim',
+  'decision.proposed': 'mengusulkan keputusan',
+  'decision.revision_requested': 'meminta revisi keputusan',
+  'decision.rejected': 'menolak keputusan',
+  'decision.superseded': 'mengganti keputusan lama',
+  'team.change_pending': 'menunda perubahan tim (provider belum ada)',
+  'agent.activated': 'mengaktifkan agent',
+  'agent.updated': 'mengubah agent',
+  'provider.configured': 'memasang provider',
+  'setting.updated': 'mengubah pengaturan',
   'review.accepted': 'menerima hasil kerja',
   'review.revision_requested': 'meminta revisi',
   'review.escalated': 'menyerahkan keputusan ke Owner',
@@ -89,7 +100,17 @@ export const tokens = (n: number | null | undefined) =>
 
 export const usd = (micros: number | null | undefined) => (micros == null ? '—' : `$${(micros / 1_000_000).toFixed(3)}`);
 
+export const DECISION_STATUS: Record<string, { label: string; dot: string; tone: string }> = {
+  proposed: { label: 'Menunggu Anda', dot: 'dot-fill-orange', tone: 'var(--orange)' },
+  approved: { label: 'Disetujui', dot: 'dot-fill-green', tone: 'var(--green)' },
+  rejected: { label: 'Ditolak / direvisi', dot: 'dot-dash-grey', tone: 'var(--ink-3)' },
+  superseded: { label: 'Digantikan', dot: 'dot-ring-grey', tone: 'var(--ink-3)' },
+};
+
 export const KIND_LABEL: Record<string, string> = {
+  framing: 'Kerangka CEO',
+  consultation: 'Konsultasi',
+  decision: 'Keputusan',
   planning: 'Perencanaan',
   research: 'Riset',
   work: 'Kerja',

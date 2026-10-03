@@ -56,6 +56,8 @@ export const objectives = mysqlTable('objectives', {
 export const decisions = mysqlTable('decisions', {
   id: id().primaryKey(),
   objectiveId: id('objective_id').notNull().references(() => objectives.id),
+  /** Task CEO yang menghasilkan usulan ini (null untuk keputusan langsung Owner). */
+  taskId: id('task_id'),
   content: json('content').notNull(),
   status: status().notNull(),
   proposedBy: varchar('proposed_by', { length: 80 }).notNull(),
