@@ -23,6 +23,7 @@ export function ObjectivePage({ id }: { id: string }) {
           <span className="mono">{objective.id.slice(0, 8)}</span>
         </nav>
         <h1 style={{ fontSize: 28, lineHeight: 1.2, fontWeight: 600 }}>{objective.title}</h1>
+        {['completed', 'failed', 'cancelled'].includes(objective.status) && <DeleteObjective id={objective.id} title={objective.title} />}
         <div className="row wrap">
           <span className="chip" style={{ color: st.tone, borderColor: 'currentColor', fontWeight: 600 }}>{st.label}</span>
           <span className="chip">Dibuat {dateTime(objective.createdAt)}</span>
@@ -409,5 +410,30 @@ function ScheduleCard({ id, schedule, status }: { id: string; schedule: Schedule
       )}
       {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
     </section>
+  );
+}
+
+function DeleteObjective({ id, title }: { id: string; title: string }) {
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <div className="row wrap">
+      <button
+        type="button"
+        className="btn btn-danger"
+        style={{ minHeight: 36, padding: '6px 12px' }}
+        onClick={async () => {
+          if (!window.confirm(`Hapus “${title}” beserta semua task, file hasil, dan jejaknya? Tidak bisa dibatalkan.`)) return;
+          try {
+            await api.deleteObjective(id);
+            window.location.hash = '#/objectives';
+          } catch (e) {
+            setErr((e as Error).message);
+          }
+        }}
+      >
+        Hapus objective ini
+      </button>
+      {err && <span className="error small">{err}</span>}
+    </div>
   );
 }

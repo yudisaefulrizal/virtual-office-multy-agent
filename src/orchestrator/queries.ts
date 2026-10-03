@@ -3,6 +3,7 @@ import { agentSessions, agents, approvals, departments, schedules, artifacts, de
 import { ROLE_TOOLS, TOOLS, toolById } from '../gateway/tools';
 import { spentUsdMicros } from './budget';
 import { describeOrgChange } from './org';
+import { quotaUsage } from './quota';
 import type { RuntimeId } from '../runtimes/runtime';
 import type { OfficeContext } from './context';
 
@@ -113,14 +114,8 @@ export async function officeView(
     const configured = ctx.runtimes.has(id);
     if (!configured && !agentRows.some((r) => r.agent.runtime === id)) continue;
     let quota: RuntimeInfo['quota'] = null;
-    if (limits?.maxRunsPerWindow && limits.windowHours) {
-      const since = new Date(Date.now() - limits.windowHours * 3600_000);
-      const [row] = await db
-        .select({ n: sql<number>`count(*)`.mapWith(Number) })
-        .from(agentSessions)
-        .where(and(eq(agentSessions.runtime, id), gt(agentSessions.startedAt, since)));
-      quota = { used: row?.n ?? 0, max: limits.maxRunsPerWindow, windowHours: limits.windowHours };
-    }
+    const q = await quotaUsage(ctx, id);
+    if (q) quota = { used: q.used, max: q.max, windowHours: q.windowHours };
     const state = configured ? runtimeState(id) : { inflight: 0, cooldownUntil: null };
     runtimesOut.push({
       id,

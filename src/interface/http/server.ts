@@ -10,6 +10,7 @@ import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { applyOrgChange, listOrg } from '../../orchestrator/org';
 import { createObjective } from '../../orchestrator/office';
+import { deleteObjective } from '../../orchestrator/cleanup';
 import { displayName, listResults, objectiveZip, readWorkspaceFile as readArtifactFile, safeName } from '../../orchestrator/results';
 import { setObjectiveBudget } from '../../orchestrator/budget';
 import { setSchedule } from '../../orchestrator/scheduler';
@@ -206,6 +207,22 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
   });
 
   app.get('/api/settings', () => getAllSettings(ctx.db));
+
+  // Mulai hitung kuota dari nol (mis. jendela Claude sebenarnya sudah pulih).
+  app.post('/api/quota/reset', async () => {
+    await withTx(ctx, async (tx, emit) => {
+      await setSetting(tx, 'quota_counted_since', new Date().toISOString());
+      emit({ type: 'quota.reset', entityType: 'setting', entityId: 'quota_counted_since', actor: 'owner' });
+    });
+    void worker.tick();
+    return { ok: true };
+  });
+
+  app.delete('/api/objectives/:id', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    await deleteObjective(ctx, id);
+    return reply.status(204).send();
+  });
   app.put('/api/settings', async (req) => {
     const body = z
       .object({
@@ -214,6 +231,7 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
         max_staff_per_role: z.number().int().min(1).max(20).optional(),
         auto_hire: z.enum(['auto', 'ask']).optional(),
         hire_wait_seconds: z.number().int().min(10).max(3600).optional(),
+        claude_max_runs_per_window: z.number().int().min(-1).max(1000).optional(),
       })
       .parse(req.body);
     await withTx(ctx, async (tx, emit) => {

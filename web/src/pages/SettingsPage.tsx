@@ -2,6 +2,39 @@ import { useState } from 'react';
 import { api, useLive, type AgentRow, type ProviderInfo, type ToolInfo } from '../api';
 import { OrgSection } from './OrgSection';
 
+function QuotaRules() {
+  const { data, refresh } = useLive(api.settings);
+  const office = useLive(api.office);
+  const [value, setValue] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!data) return null;
+  const q = office.data?.runtimes.find((r) => r.id === 'claude-cli')?.quota;
+  const shown = value ?? data.claude_max_runs_per_window;
+  const act = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    await fn().catch(() => undefined);
+    setBusy(false);
+    setValue(null);
+    refresh();
+  };
+  return (
+    <section className="card" aria-labelledby="quota">
+      <h2 id="quota">Kuota Claude CLI</h2>
+      <p className="small muted" style={{ margin: 0 }}>
+        Pengaman Virtual Office: jumlah run per jendela 5 jam. Kuota langganan Pro sebenarnya dihitung Anthropic, dan bila habis task otomatis ditunda
+        lalu dilanjutkan, jadi batas ini boleh dilonggarkan. {q ? `Terpakai sekarang: ${q.used}/${q.max} run.` : 'Saat ini tanpa batas.'}
+      </p>
+      <div className="row wrap">
+        <label htmlFor="quota-max" className="small">Maks run per jendela</label>
+        <input id="quota-max" type="number" min={-1} max={1000} value={shown} onChange={(e) => setValue(Number(e.target.value))} style={{ width: 90 }} />
+        <span className="small muted">-1 ikut .env · 0 tanpa batas</span>
+        <button type="button" className="btn btn-ghost" disabled={busy || value === null} onClick={() => act(() => api.updateSettings({ claude_max_runs_per_window: shown }))}>Simpan</button>
+        <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => act(api.resetQuota)}>Reset hitungan sekarang</button>
+      </div>
+    </section>
+  );
+}
+
 export function SettingsPage() {
   const providers = useLive(api.providers);
   const agents = useLive(api.agents);
@@ -10,6 +43,7 @@ export function SettingsPage() {
   return (
     <main className="page split">
       <section className="main">
+        <QuotaRules />
         <OrgSection />
         <section className="card" aria-labelledby="team">
           <h2 id="team">Karyawan</h2>

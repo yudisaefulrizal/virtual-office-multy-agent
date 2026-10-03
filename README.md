@@ -17,6 +17,7 @@ Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasi
 | Tool Gateway | MCP milik Virtual Office: izin per role, tool berisiko menunggu persetujuan Owner, credential terenkripsi |
 | Budget | Batas biaya API nyata per objective; lewat batas → task ditunda |
 | Scheduler | Objective berulang (harian/interval) tanpa mengulang strategi dan perencanaan |
+| Pembersihan | Objective yang sudah selesai/gagal/dibatalkan bisa dihapus dari halamannya (task, sesi, hasil, dan folder kerja ikut terhapus; knowledge tetap) |
 | Hasil kerja | Halaman **Hasil**: hasil akhir tiap objective (bahan riset/antara dilipat sebagai pendukung), dilihat langsung (Markdown, HTML aman, gambar, JSON, CSV) atau diunduh per file / ZIP hasil akhir |
 | Observability | Ringkasan biaya (Rupiah/USD), sesi, token per hari, agent, objective, runtime |
 
@@ -70,7 +71,7 @@ Semua agent memakai runtime palsu yang menulis `out/result.md`. Cocok untuk menc
 
 ### Paralel dan staf
 
-`CLAUDE_CLI_CONCURRENCY` (default 3) adalah batas sesi Claude bersamaan. Karena kuota Pro dihitung bersama, paralel membuat pekerjaan **selesai lebih cepat**, bukan menambah jumlah pekerjaan per jendela kuota. Pengaman `CLAUDE_CLI_MAX_RUNS_PER_WINDOW` tetap berlaku. HRD menambah staf hanya bila task siap kerja menunggu lama, semua staf role itu sibuk, dan runtime-nya masih punya slot (aturannya di Pengaturan > Organisasi).
+`CLAUDE_CLI_CONCURRENCY` (default 3) adalah batas sesi Claude bersamaan. Karena kuota Pro dihitung bersama, paralel membuat pekerjaan **selesai lebih cepat**, bukan menambah jumlah pekerjaan per jendela kuota. Pengaman `CLAUDE_CLI_MAX_RUNS_PER_WINDOW` (default 30) tetap berlaku; angkanya bisa diubah dan hitungannya direset dari Pengaturan > Kuota Claude CLI. HRD menambah staf hanya bila task siap kerja menunggu lama, semua staf role itu sibuk, dan runtime-nya masih punya slot (aturannya di Pengaturan > Organisasi).
 
 Setelah memperbarui kode, restart server (`npm start`): migrasi database berjalan otomatis saat start.
 
@@ -91,7 +92,7 @@ Agent memakai login Claude Code Anda (langganan, bukan API key), jadi kuotanya d
 |---|---|---|
 | `VO_DEFAULT_MODEL` | `sonnet` | Model untuk agent baru. Default Claude Code adalah Opus, yang jauh lebih boros kuota. |
 | `CLAUDE_CLI_CONCURRENCY` | `1` | Jumlah sesi agent bersamaan. |
-| `CLAUDE_CLI_MAX_RUNS_PER_WINDOW` | `10` | Batas run Virtual Office per jendela waktu; lewat dari itu task ditunda, bukan gagal. |
+| `CLAUDE_CLI_MAX_RUNS_PER_WINDOW` | `30` | Batas run Virtual Office per jendela waktu; lewat dari itu task ditunda, bukan gagal. |
 | `CLAUDE_CLI_WINDOW_HOURS` | `5` | Panjang jendela kuota. |
 
 Jika Claude mengembalikan rate limit, task kembali ke antrean tanpa menghabiskan jatah retry.

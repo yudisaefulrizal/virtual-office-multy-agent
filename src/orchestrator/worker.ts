@@ -16,6 +16,7 @@ import { onTaskAborted, onTaskCompleted } from './office';
 import { loadPlannableRoles } from './org';
 import { reviewStaffing } from './staffing';
 import { scanOutDir } from './artifacts';
+import { quotaUsage } from './quota';
 
 const LEASE_MS = 90_000;
 const HEARTBEAT_MS = 30_000;
@@ -167,17 +168,13 @@ export class Worker {
     if (until && until > new Date()) return false;
     if (this.inflightFor(id) >= this.capFor(id)) return false;
 
-    if (limits.maxRunsPerWindow && limits.windowHours) {
-      const since = new Date(Date.now() - limits.windowHours * 3600_000);
-      const [row] = await this.ctx.db
-        .select({ n: sql<number>`count(*)`.mapWith(Number) })
-        .from(agentSessions)
-        .where(and(eq(agentSessions.runtime, id), gt(agentSessions.startedAt, since)));
-      const blocked = (row?.n ?? 0) >= limits.maxRunsPerWindow;
+    const quota = await quotaUsage(this.ctx, id);
+    if (quota) {
+      const blocked = quota.used >= quota.max;
       if (blocked && !this.quotaBlocked.has(id)) {
         this.quotaBlocked.add(id);
         await withTx(this.ctx, async (_tx, emit) =>
-          emit({ type: 'runtime.quota_reached', entityType: 'runtime', entityId: id, actor: 'orchestrator', payload: { used: row?.n, max: limits.maxRunsPerWindow, windowHours: limits.windowHours } }),
+          emit({ type: 'runtime.quota_reached', entityType: 'runtime', entityId: id, actor: 'orchestrator', payload: { used: quota.used, max: quota.max, windowHours: quota.windowHours } }),
         );
       } else if (!blocked && this.quotaBlocked.delete(id)) {
         await withTx(this.ctx, async (_tx, emit) =>

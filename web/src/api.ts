@@ -281,6 +281,8 @@ export interface Settings {
   max_staff_per_role: number;
   auto_hire: 'auto' | 'ask';
   hire_wait_seconds: number;
+  claude_max_runs_per_window: number;
+  quota_counted_since: string;
 }
 
 export interface OrgRole {
@@ -394,6 +396,11 @@ export const api = {
     request<ToolInfo[]>(`/api/tools/${id}/credential`, { method: 'PUT', body: JSON.stringify(body) }),
   setBudget: (id: string, budgetUsd: number | null) =>
     request<{ ok: boolean }>(`/api/objectives/${id}`, { method: 'PATCH', body: JSON.stringify({ budgetUsd }) }),
+  resetQuota: () => request<{ ok: boolean }>('/api/quota/reset', { method: 'POST' }),
+  deleteObjective: async (id: string) => {
+    const res = await fetch(`/api/objectives/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
+  },
   updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>
     request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
