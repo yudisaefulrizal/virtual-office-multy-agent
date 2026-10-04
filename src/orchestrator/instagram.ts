@@ -15,12 +15,19 @@ const PUBLISH_PERMISSION = 'instagram_business_content_publish';
 const baseUrl = () => (process.env.NCWA_INSTAGRAM_URL ?? 'https://ncwa.nuscode.id/api/v1/instagram').replace(/\/+$/, '');
 const timeout = () => AbortSignal.timeout(20_000);
 
-async function storedKey(ctx: OfficeContext) {
+export async function storedKey(ctx: OfficeContext) {
   const [row] = await ctx.db.select().from(toolCredentials).where(eq(toolCredentials.toolId, KEY_TOOL_ID));
   return row ? { key: ctx.secrets.decrypt(row.secretEnc), last4: row.secretLast4 } : null;
 }
 
-async function ncwa<T>(key: string, method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
+/** Kesalahan dari NC-WA dengan kode HTTP, agar pemanggil bisa membedakan izin (403) dari gangguan lain. */
+export class NcwaError extends UserError {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+export async function ncwa<T>(key: string, method: 'GET' | 'POST', path: string, body?: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${baseUrl()}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -29,15 +36,15 @@ async function ncwa<T>(key: string, method: 'GET' | 'POST', path: string, body?:
   });
   const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
   if (!res.ok) {
-    if (res.status === 401) throw new UserError('API key NC-WA tidak valid');
-    if (res.status === 403) throw new UserError('API key NC-WA belum punya izin (scope) yang diperlukan');
-    if (res.status === 429) throw new UserError('Terlalu banyak permintaan ke NC-WA; coba lagi sebentar lagi');
-    throw new UserError(`NC-WA: ${json.message ?? json.error ?? `HTTP ${res.status}`}`);
+    if (res.status === 401) throw new NcwaError('API key NC-WA tidak valid', 401);
+    if (res.status === 403) throw new NcwaError('API key NC-WA belum punya izin (scope) yang diperlukan', 403);
+    if (res.status === 429) throw new NcwaError('Terlalu banyak permintaan ke NC-WA; coba lagi sebentar lagi', 429);
+    throw new NcwaError(`NC-WA: ${json.message ?? json.error ?? `HTTP ${res.status}`}`, res.status);
   }
   return json as T;
 }
 
-interface NcwaAccount {
+export interface NcwaAccount {
   id: string;
   username: string;
   status: 'active' | 'expiring' | 'expired' | 'revoked';
@@ -45,7 +52,7 @@ interface NcwaAccount {
   daysLeft?: number;
 }
 
-const listAccounts = (key: string) => ncwa<NcwaAccount[]>(key, 'GET', '/accounts');
+export const listAccounts = (key: string) => ncwa<NcwaAccount[]>(key, 'GET', '/accounts');
 
 export async function setInstagramKey(ctx: OfficeContext, input: { apiKey: string }) {
   // Toleran pada teks tempelan seperti `NCWA_apikey=ncig_…`, tanda kutip, atau `Bearer ncig_…`.

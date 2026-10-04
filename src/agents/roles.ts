@@ -263,6 +263,8 @@ export function agendaInstructions(input: {
   open: string[];
   recent: { title: string; status: string; summary: string }[];
   budget: { monthlyUsd: number; spentUsd: number };
+  /** Ringkasan pertumbuhan akun sosial media (kosong bila belum ada data). */
+  growth?: string;
 }) {
   const roles = input.plannable.map((r) => `- ${r.id}: ${r.description}`).join('\n');
   return [
@@ -281,11 +283,13 @@ export function agendaInstructions(input: {
     '## Riwayat terbaru',
     input.recent.length ? input.recent.map((r) => `- [${r.status}] ${r.title}${r.summary ? `: ${r.summary}` : ''}`).join('\n') : '- (belum ada; ini siklus pertama)',
     '',
+    ...(input.growth ? ['## Data pertumbuhan akun (dasar memilih pekerjaan)', input.growth, ''] : []),
     input.budget.monthlyUsd > 0 ? `## Budget API bulan ini\nTerpakai $${input.budget.spentUsd.toFixed(2)} dari $${input.budget.monthlyUsd.toFixed(2)}.` : '## Budget API\nTidak ada budget API berbayar; pakai kuota langganan secara hemat.',
     '',
     '## Yang harus kamu lakukan',
     `- Pilih paling banyak ${input.maxNew} objective baru yang paling bernilai bagi bisnis ini. Boleh nol bila memang tidak ada yang perlu.`,
     '- Setiap objective harus konkret dan bisa diselesaikan tim (bukan niat umum). Hindari pekerjaan yang sudah ada di daftar atas.',
+    ...(input.growth ? ['- Tujuan utama adalah mengembangkan akun. Pilih objective yang berdasarkan data di atas paling mungkin menaikkan follower dan interaksi; ulangi yang terbukti berhasil, hentikan yang tidak.'] : []),
     '- Hormati pedoman dan larangan Owner. Jangan merencanakan tindakan yang butuh akun/credential yang belum disediakan.',
     '- Lapor ke Owner (escalations) HANYA bila ada hal yang benar-benar tidak bisa diputuskan dalam batas ini. Jangan meminta izin untuk hal rutin.',
   ].join('\n');

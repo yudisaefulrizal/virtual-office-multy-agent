@@ -12,6 +12,7 @@ import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './conte
 import { knowledgePromptSection, searchKnowledge } from './knowledge';
 import { spentUsdMicros } from './budget';
 import { runDueSchedules } from './scheduler';
+import { collectDueMetrics } from './metrics';
 import { onTaskAborted, onTaskCompleted } from './office';
 import { loadPlannableRoles } from './org';
 import { reviewStaffing } from './staffing';
@@ -134,6 +135,8 @@ export class Worker {
       if (Date.now() - this.lastScheduleCheck >= SCHEDULE_CHECK_MS) {
         this.lastScheduleCheck = Date.now();
         await runDueSchedules(this.ctx).catch((err) => console.error('[scheduler]', err));
+        // Jaringan ke NC-WA tidak boleh menahan antrean task: jalankan di latar.
+        void collectDueMetrics(this.ctx).catch((err) => console.error('[metrics]', err));
         await reviewCompany(this.ctx).catch((err) => console.error('[company]', err));
         await reviewStaffing(this.ctx, (id) => {
           const st = this.runtimeState(id);

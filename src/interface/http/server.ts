@@ -11,6 +11,8 @@ import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { applyOrgChange, listOrg } from '../../orchestrator/org';
 import { companyStatus, saveCompany, setCompanyRunning } from '../../orchestrator/company';
+import { growthView } from '../../orchestrator/growth';
+import { refreshInstagramMetrics } from '../../orchestrator/metrics';
 import { createPostImage, imageModelConfig, imageUsage, isMediaFile, mediaPath, removeImageModel, setImageModel } from '../../orchestrator/imagegen';
 import { instagramOverview, removeInstagramKey, setInstagramKey } from '../../orchestrator/instagram';
 import { createObjective, promoteAllObjectives } from '../../orchestrator/office';
@@ -239,6 +241,13 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     usage: (await imageModelStatus()).usage,
   }));
 
+  // Pertumbuhan akun Instagram: riwayat follower dan jangkauan (dari snapshot) serta kinerja postingan.
+  app.get('/api/growth', async (req) => {
+    const q = z.object({ account: z.string().max(64).optional(), days: z.coerce.number().int().min(1).max(365).default(30) }).parse(req.query);
+    return growthView(ctx, { accountId: q.account, days: q.days });
+  });
+  app.post('/api/growth/refresh', async () => refreshInstagramMetrics(ctx));
+
   app.get('/api/tools', () => listTools(ctx));
   app.put('/api/tools/:id/credential', async (req, reply) => {
     const { id } = z.object({ id: z.string().max(64) }).parse(req.params);
@@ -366,6 +375,7 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
         hire_wait_seconds: z.number().int().min(10).max(3600).optional(),
         suspend_idle_minutes: z.number().int().min(0).max(1440).optional(),
         claude_max_runs_per_window: z.number().int().min(-1).max(1000).optional(),
+        metrics_interval_hours: z.number().int().min(0).max(168).optional(),
         image_max_per_day: z.number().int().min(0).max(10_000).optional(),
         image_max_cost_usd_per_day: z.number().min(0).max(100_000).optional(),
         public_base_url: z.union([z.literal(''), z.url({ protocol: /^https?$/ })]).optional(),

@@ -343,10 +343,59 @@ export interface Settings {
   hire_wait_seconds: number;
   suspend_idle_minutes: number;
   claude_max_runs_per_window: number;
+  metrics_interval_hours: number;
   image_max_per_day: number;
   image_max_cost_usd_per_day: number;
   public_base_url: string;
   quota_counted_since: string;
+}
+
+export type SourceState = 'ok' | 'no_scope' | 'error';
+export interface MetricsStatus {
+  at: string;
+  trigger: 'auto' | 'manual';
+  error?: string;
+  accounts: { id: string; username: string; summary: SourceState; media: SourceState; posts: number; error?: string }[];
+}
+export interface GrowthPost {
+  id: string;
+  caption: string | null;
+  mediaType: string | null;
+  permalink: string | null;
+  mediaUrl: string | null;
+  postedAt: string | null;
+  likes: number;
+  comments: number;
+  engagement: number;
+  bySystem: boolean;
+}
+export interface GrowthView {
+  configured: boolean;
+  intervalHours: number;
+  status: MetricsStatus | null;
+  accounts: { id: string; username: string }[];
+  accountId: string | null;
+  latest: {
+    username: string;
+    followers: number;
+    following: number | null;
+    mediaCount: number | null;
+    views: number | null;
+    reach: number | null;
+    accountsEngaged: number | null;
+    totalInteractions: number | null;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    saves: number | null;
+    profileViews: number | null;
+    fetchedAt: string;
+  } | null;
+  deltas: { d1: number | null; d7: number | null; d30: number | null };
+  historyDays: number;
+  series: { t: string; followers: number; reach: number | null; interactions: number | null }[];
+  posts: GrowthPost[];
+  postStats: { count: number; system: { count: number; avgEngagement: number | null }; other: { count: number; avgEngagement: number | null } } | null;
 }
 
 export interface ImageModelInfo {
@@ -488,6 +537,8 @@ export const api = {
     if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
   },
   updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  growth: (account: string | null, days: number) => request<GrowthView>(`/api/growth?days=${days}${account ? `&account=${encodeURIComponent(account)}` : ''}`),
+  growthRefresh: () => request<MetricsStatus>('/api/growth/refresh', { method: 'POST' }),
   imageModel: () => request<ImageModelInfo>('/api/image-model'),
   saveImageModel: (body: { apiKey?: string; model: string; enabled: boolean }) => request<ImageModelInfo>('/api/image-model', { method: 'PUT', body: JSON.stringify(body) }),
   removeImageModel: () => request<ImageModelInfo>('/api/image-model', { method: 'DELETE' }),

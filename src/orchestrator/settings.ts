@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { Tx } from '../db/client';
 import { settings } from '../db/schema';
 import type { Company } from './company';
+import type { MetricsStatus } from './metrics';
 
 /** Pengaturan Owner beserta nilai default-nya. */
 export const SETTING_DEFAULTS = {
@@ -26,6 +27,10 @@ export const SETTING_DEFAULTS = {
   image_max_cost_usd_per_day: 1,
   /** Alamat server yang bisa dijangkau Instagram (mis. https://kantor.contoh.id); gambar post disajikan di /media/. */
   public_base_url: '',
+  /** Jam antar pengambilan data akun Instagram (follower, jangkauan, post). 0 = mati. */
+  metrics_interval_hours: 6,
+  /** Hasil pengambilan data terakhir (per akun dan per sumber), untuk ditampilkan di halaman Pertumbuhan. */
+  metrics_status: null as MetricsStatus | null,
   /** Piagam perusahaan (jenis usaha, produk, batas) dan status operasi otonom. null = belum diisi. */
   company: null as Company | null,
 };

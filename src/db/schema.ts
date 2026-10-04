@@ -326,3 +326,49 @@ export const imageGenerations = mysqlTable(
   },
   (t) => [index('image_generations_created').on(t.createdAt)],
 );
+
+/**
+ * Riwayat angka akun Instagram. NC-WA hanya memberi kondisi saat ini (tanpa riwayat), jadi pertumbuhan dihitung
+ * dari snapshot yang kita simpan tiap pengambilan data. Angka bulan berjalan memakai jendela bergulir 30 hari.
+ */
+export const instagramSnapshots = mysqlTable(
+  'instagram_snapshots',
+  {
+    id: id().primaryKey(),
+    accountId: varchar('account_id', { length: 64 }).notNull(),
+    username: varchar('username', { length: 64 }).notNull(),
+    followers: int('followers').notNull(),
+    following: int('following'),
+    mediaCount: int('media_count'),
+    views: int('views'),
+    reach: int('reach'),
+    accountsEngaged: int('accounts_engaged'),
+    totalInteractions: int('total_interactions'),
+    likes: int('likes'),
+    comments: int('comments'),
+    shares: int('shares'),
+    saves: int('saves'),
+    profileViews: int('profile_views'),
+    fetchedAt: ts('fetched_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+  },
+  (t) => [index('instagram_snapshots_account_time').on(t.accountId, t.fetchedAt)],
+);
+
+/** Postingan akun beserta hitungan terbaru (like, komentar). Diperbarui tiap pengambilan data. */
+export const instagramMedia = mysqlTable(
+  'instagram_media',
+  {
+    accountId: varchar('account_id', { length: 64 }).notNull(),
+    mediaId: varchar('media_id', { length: 64 }).notNull(),
+    caption: text('caption'),
+    mediaType: varchar('media_type', { length: 24 }),
+    permalink: varchar('permalink', { length: 255 }),
+    mediaUrl: text('media_url'),
+    postedAt: ts('posted_at'),
+    likeCount: int('like_count'),
+    commentsCount: int('comments_count'),
+    firstSeenAt: ts('first_seen_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+    fetchedAt: ts('fetched_at').notNull().default(sql`(CURRENT_TIMESTAMP(3))`),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.mediaId] }), index('instagram_media_posted').on(t.accountId, t.postedAt)],
+);

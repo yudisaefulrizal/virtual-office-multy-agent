@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { growthBrief } from './growth';
 import { type CompanyBrief, agendaInstructions, companyBriefText } from '../agents/roles';
 import type { Agenda, AgendaInput } from '../agents/schemas';
 import type { Tx } from '../db/client';
@@ -132,6 +133,7 @@ async function startAgenda(ctx: OfficeContext, company: Company, maxNew: number,
   const openTitles = open.filter((o) => originOf(o).mode !== 'agenda').map((o) => o.title);
   const existingTitles = [...openTitles, ...recent.map((r) => r.title)];
   const spent = await monthSpentUsd(ctx.db, now);
+  const growth = await growthBrief(ctx).catch(() => '');
 
   await withTx(ctx, async (tx, emit) => {
     const objectiveId = crypto.randomUUID();
@@ -152,7 +154,7 @@ async function startAgenda(ctx: OfficeContext, company: Company, maxNew: number,
       projectId: null,
       kind: 'agenda',
       title: 'Susun agenda perusahaan',
-      instructions: agendaInstructions({ brief: company, maxNew, plannable, open: openTitles, recent, budget: { monthlyUsd: company.monthlyBudgetUsd, spentUsd: spent } }),
+      instructions: agendaInstructions({ brief: company, maxNew, plannable, open: openTitles, recent, budget: { monthlyUsd: company.monthlyBudgetUsd, spentUsd: spent }, growth: growth || undefined }),
       input: { ...input },
       roleId: 'ceo',
       planKey: 'agenda',

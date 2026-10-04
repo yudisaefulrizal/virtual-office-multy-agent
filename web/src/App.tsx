@@ -4,6 +4,7 @@ import { api, onUnauthorized, useLive } from './api';
 import { AccessPage } from './pages/AccessPage';
 import { CompanyPage, ProfilePage } from './pages/CompanyPage';
 import { DecisionPage, DecisionsPage } from './pages/DecisionPage';
+import { GrowthPage } from './pages/GrowthPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { ObjectivePage } from './pages/ObjectivePage';
 import { ObjectivesPage } from './pages/ObjectivesPage';
@@ -25,6 +26,7 @@ function useHashRoute() {
 const ICON: Record<string, ReactNode> = {
   company: <><path d="M10 2.5l7 4v7l-7 4-7-4v-7z" /><path d="M3 6.5l7 4 7-4M10 10.5v7" /></>,
   office: <><rect x="3" y="4" width="14" height="12" rx="1.5" /><path d="M3 10h14M10 4v12" /></>,
+  growth: <path d="M3 16l5-5 3 3 6-8M13 6h4v4" />,
   results: <><path d="M5 3h7l3 3v11H5z" /><path d="M12 3v3h3M8 10h4M8 13h4" /></>,
   access: <><circle cx="7" cy="10" r="3.5" /><path d="M10.5 10H17M15 10v3" /></>,
   costs: <path d="M4 16V9M10 16V4M16 16v-5" />,
@@ -41,6 +43,7 @@ const NAV = [
   { id: 'company', href: '#/', label: 'Beranda' },
   { id: 'office', href: '#/office', label: 'Kantor' },
   { id: 'results', href: '#/results', label: 'Hasil' },
+  { id: 'growth', href: '#/growth', label: 'Tumbuh' },
   { id: 'access', href: '#/access', label: 'Akses' },
   { id: 'summary', href: '#/summary', label: 'Biaya', icon: 'costs', hideSm: true },
 ] as const;
@@ -52,7 +55,7 @@ const MORE = [
 ];
 
 function sectionOf(route: string) {
-  for (const id of ['objectives', 'decisions', 'settings', 'knowledge', 'summary', 'results', 'access', 'office', 'profile']) {
+  for (const id of ['objectives', 'decisions', 'settings', 'knowledge', 'summary', 'results', 'growth', 'access', 'office', 'profile']) {
     if (route.startsWith(`/${id}`)) return id;
   }
   return 'company';
@@ -225,6 +228,8 @@ function Dashboard({ canLogout, onLogout }: { canLogout: boolean; onLogout: () =
           <SummaryPage />
         ) : section === 'results' ? (
           <ResultsPage />
+        ) : section === 'growth' ? (
+          <GrowthPage />
         ) : section === 'access' ? (
           <AccessPage />
         ) : section === 'office' ? (

@@ -34,6 +34,7 @@ export const SESSION_STATUS: Record<string, string> = {
 };
 
 const EVENT_TEXT: Record<string, string> = {
+  'metrics.collected': 'memperbarui data pertumbuhan Instagram',
   'company.agenda_started': 'mulai menyusun agenda',
   'company.agenda_created': 'menetapkan agenda baru',
   'company.started': 'menjalankan perusahaan',
