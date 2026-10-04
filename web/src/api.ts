@@ -227,8 +227,10 @@ export interface ProviderInfo {
 }
 
 export interface InstagramOverview {
-  app: { configured: boolean; appId: string; secretLast4: string | null; redirectUri: string };
-  accounts: { id: string; username: string; accountType: string; status: 'active' | 'expiring' | 'expired' | 'revoked'; daysLeft: number; canPublish: boolean }[];
+  configured: boolean;
+  last4: string | null;
+  error: string | null;
+  accounts: { id: string; username: string; status: 'active' | 'expiring' | 'expired' | 'revoked'; daysLeft: number; canPublish: boolean }[];
 }
 
 export interface AgentRow {
@@ -341,7 +343,23 @@ export interface Settings {
   hire_wait_seconds: number;
   suspend_idle_minutes: number;
   claude_max_runs_per_window: number;
+  image_max_per_day: number;
+  image_max_cost_usd_per_day: number;
+  public_base_url: string;
   quota_counted_since: string;
+}
+
+export interface ImageModelInfo {
+  configured: boolean;
+  last4: string | null;
+  model: string;
+  enabled: boolean;
+  usage: { day: { count: number; costUsd: number } };
+}
+export interface ImageTestResult {
+  file: string;
+  source: 'model' | 'text';
+  reason?: string;
 }
 
 export interface OrgRole {
@@ -414,11 +432,16 @@ export interface DecisionDetail {
   providers: string[];
 }
 
+const unauthorizedListeners = new Set<() => void>();
+/** Dipanggil saat server menjawab 401 (sesi habis); App lalu menampilkan halaman masuk. */
+export const onUnauthorized = (fn: () => void) => (unauthorizedListeners.add(fn), () => void unauthorizedListeners.delete(fn));
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
     headers: init?.body ? { 'content-type': 'application/json' } : undefined,
   });
+  if (res.status === 401 && url !== '/api/login') unauthorizedListeners.forEach((fn) => fn());
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -427,6 +450,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  session: () => request<{ required: boolean; authenticated: boolean }>('/api/session'),
+  login: (code: string) => request<{ ok: boolean }>('/api/login', { method: 'POST', body: JSON.stringify({ code }) }),
+  logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
   office: () => request<OfficeView>('/api/office'),
   objectives: () => request<ObjectiveSummary[]>('/api/objectives'),
   results: () => request<ObjectiveResult[]>('/api/results'),
@@ -462,12 +488,13 @@ export const api = {
     if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`);
   },
   updateSettings: (body: Partial<Settings>) => request<Settings>('/api/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  imageModel: () => request<ImageModelInfo>('/api/image-model'),
+  saveImageModel: (body: { apiKey?: string; model: string; enabled: boolean }) => request<ImageModelInfo>('/api/image-model', { method: 'PUT', body: JSON.stringify(body) }),
+  removeImageModel: () => request<ImageModelInfo>('/api/image-model', { method: 'DELETE' }),
+  testImageModel: () => request<ImageTestResult>('/api/image-model/test', { method: 'POST' }),
   instagram: () => request<InstagramOverview>('/api/instagram'),
-  saveInstagramApp: (body: { appId: string; appSecret?: string }) => request<InstagramOverview>('/api/instagram/app', { method: 'PUT', body: JSON.stringify(body) }),
-  removeInstagramApp: () => request<InstagramOverview>('/api/instagram/app', { method: 'DELETE' }),
-  connectInstagram: () => request<{ url: string }>('/api/instagram/connect', { method: 'POST' }),
-  refreshInstagram: (id: string) => request<InstagramOverview>(`/api/instagram/accounts/${id}/refresh`, { method: 'POST' }),
-  disconnectInstagram: (id: string) => request<InstagramOverview>(`/api/instagram/accounts/${id}`, { method: 'DELETE' }),
+  saveInstagramKey: (body: { apiKey: string }) => request<InstagramOverview>('/api/instagram/key', { method: 'PUT', body: JSON.stringify(body) }),
+  removeInstagramKey: () => request<InstagramOverview>('/api/instagram/key', { method: 'DELETE' }),
   removeProvider: (id: string) => request<ProviderInfo[]>(`/api/providers/${id}`, { method: 'DELETE' }),
   removeToolCredential: (id: string) => request<ToolInfo[]>(`/api/tools/${id}/credential`, { method: 'DELETE' }),
   setProvider: (id: string, body: { apiKey?: string; defaultModel: string }) =>

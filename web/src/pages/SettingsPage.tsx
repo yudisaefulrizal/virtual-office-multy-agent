@@ -101,6 +101,7 @@ function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirty = runtime !== agent.runtime || model !== (agent.model ?? '');
+  const orOffered = providers.some((p) => p.id === 'openrouter');
   const orConfigured = providers.find((p) => p.id === 'openrouter')?.configured;
 
   const save = async (lifecycle?: 'suspend' | 'reactivate' | 'retire') => {
@@ -128,7 +129,7 @@ function AgentEditor({ agent, providers, onSaved }: { agent: AgentRow; providers
         <label className="sr-only" htmlFor={`rt-${agent.id}`}>Runtime {agent.name}</label>
         <select id={`rt-${agent.id}`} value={runtime} onChange={(e) => setRuntime(e.target.value)}>
           <option value="claude-cli">claude-cli</option>
-          <option value="openrouter">openrouter{orConfigured ? '' : ' (belum dipasang)'}</option>
+          {(orOffered || agent.runtime === 'openrouter') && <option value="openrouter">openrouter{orConfigured ? '' : ' (belum dipasang)'}</option>}
         </select>
       </td>
       <td>

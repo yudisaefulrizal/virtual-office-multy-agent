@@ -819,18 +819,16 @@ Batas yang belum diuji dengan Claude sungguhan: mutu agenda CEO dan apakah 20% c
 
 Semua kunci/akun yang bisa dipakai AI dikelola di `#/access`: Claude CLI (hanya status; login ada di terminal), provider API (OpenRouter), dan credential tool Gateway (Instagram). Rahasia hanya bisa dimasukkan, diganti, atau dihapus; API hanya mengembalikan 4 karakter terakhir. `DELETE /api/providers/:id` melepas runtime dan mengembalikan agent yang memakainya ke `waiting_provider`; `DELETE /api/tools/:id/credential` mencabut akses tool. Integrasi baru otomatis muncul bila tool dengan `credential` ditambahkan di `gateway/tools.ts`.
 
-## 19. Login Instagram resmi (2026-10-03)
+## 19. Instagram lewat NC-WA (2026-10-04)
 
-Mengikuti pola `nc-wa-official` (Business Login for Instagram), bukan token manual:
-- Owner mengisi **App ID** dan **App Secret** aplikasi Meta (terenkripsi, tabel `tool_credentials` id `instagram_login_app`) dan menambahkan `APP_ORIGIN/auth/instagram/callback` sebagai Valid OAuth redirect URI.
-- Tombol **Hubungkan Instagram** → `POST /api/instagram/connect` membuat `state` acak sekali pakai (hash di `instagram_states`, berlaku 10 menit) dan mengembalikan alamat izin di instagram.com (scope `instagram_business_basic`, `instagram_business_content_publish`).
-- Callback `GET /auth/instagram/callback` menukar kode → token pendek → token panjang 60 hari (`ig_exchange_token`) → membaca profil, lalu menyimpan token terenkripsi di `instagram_accounts`. Hasil (`connected|cancelled|error`) dibawa ke `#/access?instagram=…`.
-- Worker memperpanjang token yang sisa umurnya < 14 hari (cek tiap jam); Owner juga bisa memperpanjang atau memutus manual.
-- Tool `instagram_publish` tidak lagi punya credential sendiri: setelah disetujui (atau otomatis bila `autoPublish` aktif dan ada akun aktif berizin posting) sistem membuat container media, menunggu `FINISHED`, lalu `media_publish` lewat `graph.instagram.com/v23.0`.
-- Beda dengan nc-wa-official: satu pemilik (tanpa pemisahan akun), tanpa webhook DM, dan tanpa hosting gambar sendiri: gambar masih harus URL publik JPEG.
-- **Belum diuji dengan Meta sungguhan** (tes memakai server Meta tiruan lewat `INSTAGRAM_*_URL`). Meta umumnya mewajibkan Redirect URI HTTPS; akun harus Business/Creator dan app dalam mode dev hanya mengizinkan akun tester.
+Aplikasi ini tidak login ke Meta sendiri. Akun Instagram resmi sudah terhubung di `ncwa.nuscode.id` (proyek `nc-wa-official`); aplikasi memakainya lewat API key:
+- Owner hanya mengisi **API key NC-WA** (`ncig_…`, dibuat di Dashboard NC-WA › Integrasi) di halaman Akses. Key divalidasi dengan `GET /accounts` sebelum disimpan terenkripsi (`tool_credentials` id `ncwa_instagram`). Scope key yang dibutuhkan: `accounts:read` dan `posts:publish`.
+- Daftar akun (username, status, sisa hari token) dibaca langsung dari NC-WA; token Meta dan perpanjangannya diurus NC-WA.
+- Tool `instagram_publish`: setelah disetujui (atau otomatis bila `autoPublish` aktif dan ada akun aktif berizin posting) sistem memanggil `POST /posts` dengan `requestId` unik, lalu memantau `GET /posts/:requestId` sampai `published`. Status `unknown` dilaporkan sebagai gagal agar tidak diposting ganda.
+- Alamat dasar bisa diganti lewat `NCWA_INSTAGRAM_URL` (dipakai tes). Gambar tetap harus URL publik (1:1–4:5).
+- Tabel `instagram_accounts` dan `instagram_states` dari desain lama tidak lagi dipakai.
 
-Keamanan tunnel: dashboard dan API tidak punya login, jadi `onRequest` hook hanya melayani permintaan dari komputer ini (Host loopback dan tanpa header proxy `cf-connecting-ip`/`x-forwarded-*`/`x-real-ip`/`forwarded`). Lewat alamat publik hanya `GET /auth/instagram/callback` yang dilayani, lalu browser dikembalikan ke `UI_ORIGIN` (dashboard lokal). Agent mengakses `/mcp` lewat loopback sehingga tidak terpengaruh. Bila suatu saat dashboard perlu dibuka dari jauh, tambahkan login Owner dulu.
+Keamanan tunnel: dashboard dan API tidak punya login, jadi `onRequest` hook hanya melayani permintaan dari komputer ini (Host loopback dan tanpa header proxy `cf-connecting-ip`/`x-forwarded-*`/`x-real-ip`/`forwarded`). Lewat alamat publik semuanya 404. Agent mengakses `/mcp` lewat loopback sehingga tidak terpengaruh. Bila suatu saat dashboard perlu dibuka dari jauh, tambahkan login Owner dulu.
 
 ## 20. Desain ulang antarmuka (2026-10-03)
 

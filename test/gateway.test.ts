@@ -2,7 +2,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { agents, approvals, instagramAccounts, tasks, toolExecutions } from '../src/db/schema';
+import { agents, approvals, tasks, toolExecutions } from '../src/db/schema';
+import { setInstagramKey } from '../src/orchestrator/instagram';
 import { Gateway } from '../src/gateway/gateway';
 import type { Caller } from '../src/gateway/tools';
 import { buildServer } from '../src/interface/http/server';
@@ -97,26 +98,25 @@ describe('Tool Gateway', () => {
     expect(fail.ok).toBe(false);
     expect(fail.message).toContain('Belum ada akun Instagram');
 
-    // Permintaan kedua, kali ini akun terhubung (lewat Instagram Login) dan Graph API ditiru.
-    await o.db.insert(instagramAccounts).values({
-      igUserId: '1789', username: 'kopisenja', accountType: 'BUSINESS', tokenEnc: o.ctx.secrets.encrypt('IGAAtoken-1234'),
-      permissions: 'instagram_business_basic,instagram_business_content_publish', expiresAt: new Date(Date.now() + 30 * 86_400_000),
-    });
+    // Permintaan kedua, kali ini API key NC-WA terpasang dan NC-WA ditiru.
     const calls: string[] = [];
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url} ${String(init?.body ?? '')} ${JSON.stringify(init?.headers ?? {})}`);
-      if (url.includes('status_code')) return new Response(JSON.stringify({ status_code: 'FINISHED' }), { status: 200 });
-      return new Response(JSON.stringify({ id: url.endsWith('/media') ? '555' : '999' }), { status: 200 });
+      const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
+      if (url.endsWith('/accounts')) return json([{ id: '1789', username: 'kopisenja', status: 'active', permissions: ['instagram_business_content_publish'] }]);
+      if (init?.method === 'POST') return json({ requestId: 'r', status: 'preparing', mediaId: null }, 202);
+      return json({ requestId: 'r', status: 'published', mediaId: '999' });
     });
+    await setInstagramKey(o.ctx, { apiKey: `ncig_${'ab12cd34'.repeat(8)}` });
     await gw.call(caller, 'instagram_publish', { image_url: 'https://cdn.example.com/b.jpg', caption: 'Kopi sore' });
     const [pending] = await o.db.select().from(approvals).where(eq(approvals.status, 'pending'));
     const ok = await gw.approve(pending!.id);
     expect(ok).toMatchObject({ ok: true, result: { mediaId: '999', username: 'kopisenja' } });
-    expect(calls[0]).toContain('POST https://graph.instagram.com/v23.0/1789/media');
-    expect(calls[0]).toContain('Bearer IGAAtoken-1234');
-    expect(calls[0]).toContain('caption=Kopi+sore');
-    expect(calls.some((c) => c.includes('555?fields=status_code'))).toBe(true);
-    expect(calls.at(-1)).toContain('creation_id=555');
+    expect(calls[0]).toContain('GET https://ncwa.nuscode.id/api/v1/instagram/accounts');
+    const post = calls.find((c) => c.startsWith('POST'))!;
+    expect(post).toContain('https://ncwa.nuscode.id/api/v1/instagram/posts');
+    expect(post).toContain(`Bearer ncig_${'ab12cd34'.repeat(8)}`);
+    expect(post).toContain('"caption":"Kopi sore"');
     const [exec] = await o.db.select().from(toolExecutions).where(eq(toolExecutions.approvalId, pending!.id));
     expect(exec?.status).toBe('executed');
   });

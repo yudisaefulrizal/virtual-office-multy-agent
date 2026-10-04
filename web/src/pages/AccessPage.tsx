@@ -1,11 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { api, useLive, type ProviderInfo, type ToolInfo } from '../api';
+import { api, useLive, type ImageModelInfo, type ImageTestResult, type ProviderInfo, type Settings, type ToolInfo } from '../api';
 
-const IG_RESULT: Record<string, { ok: boolean; text: string }> = {
-  connected: { ok: true, text: 'Instagram terhubung.' },
-  cancelled: { ok: false, text: 'Izin dibatalkan.' },
-  error: { ok: false, text: 'Login gagal atau kedaluwarsa. Coba lagi.' },
-};
 const IG_STATUS = { active: 'Aktif', expiring: 'Hampir habis', expired: 'Kedaluwarsa', revoked: 'Dicabut' } as const;
 
 /** Kunci dan akun yang boleh dipakai AI. Rahasia hanya bisa dimasukkan, diganti, atau dihapus. */
@@ -25,6 +20,7 @@ export function AccessPage() {
           <ProviderItem key={p.id} provider={p} waiting={agents.data?.filter((a) => a.runtime === p.id && a.status === 'waiting_provider').length ?? 0} onChanged={() => (providers.refresh(), agents.refresh())} />
         ))}
         <InstagramItem />
+        <ImageModelItem />
         {toolsWithCred.map((t) => (
           <ToolItem key={t.id} tool={t} onChanged={tools.refresh} />
         ))}
@@ -147,47 +143,38 @@ function ProviderItem({ provider, waiting, onChanged }: { provider: ProviderInfo
 
 function InstagramItem() {
   const { data, refresh } = useLive(api.instagram);
-  const [open, setOpen] = useState(() => new URLSearchParams(window.location.hash.split('?')[1] ?? '').has('instagram'));
-  const [appId, setAppId] = useState('');
-  const [secret, setSecret] = useState('');
-  const { busy, msg, setMsg, run } = useAction(refresh);
-  const [seeded, setSeeded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState('');
+  const { busy, msg, run } = useAction(refresh);
   if (!data) return null;
-  if (!seeded) {
-    const r = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('instagram');
-    if (r) setMsg(IG_RESULT[r] ?? IG_RESULT.error!);
-    setSeeded(true);
-  }
-  const configured = data.app.configured;
   return (
     <Item
       icon="M5 3h10a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2zM10 7.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z"
       title="Instagram"
-      sub={data.accounts.length > 0 ? data.accounts.map((a) => `@${a.username}`).join(', ') : undefined}
+      sub={data.accounts.length > 0 ? data.accounts.map((a) => `@${a.username}`).join(', ') : data.configured ? `••••${data.last4}` : undefined}
       pill={data.accounts.length > 0 ? ['Terhubung', 'pill-green'] : ['Belum terhubung', 'pill-amber']}
       open={open}
       onToggle={() => setOpen(!open)}
     >
-      <div className="acc-form">
-        <form
-          style={{ display: 'contents' }}
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await api.saveInstagramApp({ appId: appId.trim() || data.app.appId, appSecret: secret.trim() || undefined });
-              setSecret('');
-            }, 'Tersimpan.');
-          }}
-        >
-          <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="ig-app-id">App ID</label><input id="ig-app-id" className="mono" inputMode="numeric" value={appId} onChange={(e) => setAppId(e.target.value)} placeholder={data.app.appId || '123456789012345'} /></div>
-          <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="ig-app-secret">App Secret</label><input id="ig-app-secret" className="mono" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={configured ? `••••${data.app.secretLast4}` : ''} /></div>
-          <div className="field" style={{ flexBasis: '100%' }}><label htmlFor="ig-uri">Redirect URI</label><input id="ig-uri" className="mono" readOnly value={data.app.redirectUri} onFocus={(e) => e.currentTarget.select()} style={{ background: 'var(--bg)', fontSize: 13 }} /></div>
-          <div className="row wrap">
-            <button type="submit" className="btn btn-ghost" disabled={busy || (!configured && (!appId.trim() || !secret.trim()))}>Simpan</button>
-            {configured && <Remove busy={busy} label="Hapus aplikasi" what="aplikasi Meta" onConfirm={() => void run(() => api.removeInstagramApp(), 'Dihapus.')} />}
-          </div>
-        </form>
-
+      <form
+        className="acc-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(async () => {
+            await api.saveInstagramKey({ apiKey: key.trim() });
+            setKey('');
+          }, 'Tersimpan.');
+        }}
+      >
+        <div className="field" style={{ flex: '1 1 320px' }}>
+          <label htmlFor="ig-key">API key NC-WA</label>
+          <input id="ig-key" className="mono" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={data.configured ? `••••${data.last4}` : 'ncig_…'} />
+        </div>
+        <div className="row wrap">
+          <button type="submit" className="btn btn-ghost" disabled={busy || !key.trim()}>Simpan</button>
+          {data.configured && <Remove busy={busy} label="Hapus" what="API key NC-WA" onConfirm={() => void run(() => api.removeInstagramKey(), 'Dihapus.')} />}
+        </div>
+        {data.error && <p className="small" style={{ color: 'var(--orange-ink)', flexBasis: '100%' }}>{data.error}</p>}
         {data.accounts.length > 0 && (
           <ul className="accounts">
             {data.accounts.map((a) => (
@@ -198,26 +185,97 @@ function InstagramItem() {
                     {IG_STATUS[a.status]}{a.status === 'active' || a.status === 'expiring' ? ` · ${a.daysLeft} hari` : ''}{!a.canPublish ? ' · tanpa izin posting' : ''}
                   </span>
                 </span>
-                {(a.status === 'active' || a.status === 'expiring') && <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.refreshInstagram(a.id), 'Diperpanjang.')}>Perpanjang</button>}
-                <Remove busy={busy} label="Putuskan" what={`akun @${a.username}`} onConfirm={() => void run(() => api.disconnectInstagram(a.id), 'Diputus.')} />
               </li>
             ))}
           </ul>
         )}
-
-        <button
-          type="button"
-          className="btn"
-          disabled={busy || !configured}
-          onClick={() => void run(async () => {
-            const { url } = await api.connectInstagram();
-            window.location.href = url;
-          })}
-        >
-          {data.accounts.length > 0 ? 'Hubungkan akun lain' : 'Hubungkan Instagram'}
-        </button>
         <Msg msg={msg} />
-      </div>
+      </form>
+    </Item>
+  );
+}
+
+const usd = (n: number) => `$${n.toFixed(n < 1 ? 3 : 2)}`;
+
+/** OpenRouter khusus model gambar. Tanpa model aktif (atau kuota habis) gambar post berupa teks di latar putih. */
+function ImageModelItem() {
+  const info = useLive(api.imageModel);
+  const settings = useLive(api.settings);
+  if (!info.data || !settings.data) return null;
+  return <ImageModelBody info={info.data} settings={settings.data} onChanged={() => (info.refresh(), settings.refresh())} />;
+}
+
+function ImageModelBody({ info, settings, onChanged }: { info: ImageModelInfo; settings: Settings; onChanged: () => void }) {
+  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState(info.model);
+  const [enabled, setEnabled] = useState(info.configured ? info.enabled : true);
+  const [limits, setLimits] = useState({
+    perDay: String(settings.image_max_per_day),
+    costDay: String(settings.image_max_cost_usd_per_day),
+    publicUrl: settings.public_base_url,
+  });
+  const [test, setTest] = useState<ImageTestResult | null>(null);
+  const modelForm = useAction(() => (setApiKey(''), onChanged()));
+  const limitForm = useAction(onChanged);
+  const tester = useAction(onChanged);
+  const active = info.configured && info.enabled;
+  const { day } = info.usage;
+  const cap = (used: string, max: number, fmt: (n: number) => string = String) => `${used}${max > 0 ? ` / ${fmt(max)}` : ' (tanpa batas)'}`;
+  return (
+    <Item
+      icon="M3 5a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V5zM3 14l4-4 3 3 3-3 4 4M13 7.5h.01"
+      title="Model gambar"
+      sub={active ? `${info.model} · ••••${info.last4}` : 'Tanpa model: gambar berupa teks di latar putih'}
+      pill={active ? ['Aktif', 'pill-green'] : info.configured ? ['Nonaktif', 'pill-grey'] : ['Teks saja', 'pill-grey']}
+    >
+      <form
+        className="acc-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void modelForm.run(() => api.saveImageModel({ apiKey: apiKey.trim() || undefined, model: model.trim(), enabled }), 'Tersimpan.');
+        }}
+      >
+        <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="img-key">API key OpenRouter (khusus gambar)</label><input id="img-key" className="mono" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={info.configured ? 'Kosongkan untuk tetap' : 'sk-or-…'} /></div>
+        <div className="field" style={{ flex: '1 1 220px' }}><label htmlFor="img-model">Vendor/model</label><input id="img-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="google/gemini-2.5-flash-image" required minLength={3} /></div>
+        <label className="row small" style={{ gap: 8, alignItems: 'center' }}><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Aktif</label>
+        <div className="row wrap">
+          <button className="btn" type="submit" disabled={modelForm.busy || model.trim().length < 3 || (!info.configured && !apiKey.trim())}>Simpan</button>
+          {info.configured && <Remove busy={modelForm.busy} label="Hapus" what="API key model gambar" onConfirm={() => void modelForm.run(() => api.removeImageModel(), 'Dihapus.')} />}
+        </div>
+        <Msg msg={modelForm.msg} />
+      </form>
+
+      <form
+        className="acc-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void limitForm.run(
+            () => api.updateSettings({ image_max_per_day: Number(limits.perDay), image_max_cost_usd_per_day: Number(limits.costDay), public_base_url: limits.publicUrl.trim().replace(/\/+$/, '') }),
+            'Tersimpan.',
+          );
+        }}
+      >
+        <div className="field" style={{ flex: '1 1 150px' }}><label htmlFor="img-day">Gambar per 24 jam</label><input id="img-day" type="number" min={0} step={1} value={limits.perDay} onChange={(e) => setLimits({ ...limits, perDay: e.target.value })} /></div>
+        <div className="field" style={{ flex: '1 1 150px' }}><label htmlFor="img-cost-day">Biaya per 24 jam (USD)</label><input id="img-cost-day" type="number" min={0} step="0.01" value={limits.costDay} onChange={(e) => setLimits({ ...limits, costDay: e.target.value })} /></div>
+        <div className="field" style={{ flex: '1 1 100%' }}><label htmlFor="img-public">Alamat publik server (agar Instagram bisa mengambil gambar)</label><input id="img-public" type="url" value={limits.publicUrl} onChange={(e) => setLimits({ ...limits, publicUrl: e.target.value })} placeholder="https://kantor.contoh.id" /></div>
+        <p className="muted small" style={{ flexBasis: '100%', margin: 0 }}>0 = tanpa batas. Saat batas tercapai, gambar otomatis berupa teks di latar putih; post tidak tertunda. Hanya <span className="mono">/media/…</span> yang dibuka ke publik.</p>
+        <div className="row wrap">
+          <button className="btn btn-ghost" type="submit" disabled={limitForm.busy}>Simpan batas</button>
+          <button className="btn btn-ghost" type="button" disabled={tester.busy} onClick={() => void tester.run(async () => setTest(await api.testImageModel()))}>{tester.busy ? 'Membuat…' : 'Uji buat gambar'}</button>
+        </div>
+        <Msg msg={limitForm.msg} />
+        <Msg msg={tester.msg} />
+      </form>
+
+      <p className="small" style={{ margin: 0 }}>
+        Pemakaian: {cap(String(day.count), settings.image_max_per_day)} gambar · {cap(usd(day.costUsd), settings.image_max_cost_usd_per_day, usd)} dalam 24 jam terakhir
+      </p>
+      {test && (
+        <div className="row" style={{ gap: 14, alignItems: 'flex-start' }}>
+          <img src={`/media/${test.file}`} alt="Contoh gambar" width={120} style={{ border: '1px solid var(--line, #ddd)', borderRadius: 6 }} />
+          <span className="small">{test.source === 'model' ? 'Dibuat oleh model gambar.' : `Gambar teks di latar putih${test.reason ? ` — ${test.reason}` : ''}.`}</span>
+        </div>
+      )}
     </Item>
   );
 }

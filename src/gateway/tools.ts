@@ -1,3 +1,4 @@
+import { createPostImage, publicImageUrl } from '../orchestrator/imagegen';
 import { publishInstagramImage } from '../orchestrator/instagram';
 import { z } from 'zod';
 import { UserError } from '../domain';
@@ -23,6 +24,8 @@ export interface ToolDef<S extends z.ZodRawShape = z.ZodRawShape> {
   input: S;
   /** Credential yang harus dipasang Owner sebelum tool bisa dieksekusi. */
   credential?: { label: string; configFields: { key: string; label: string }[] };
+  /** Dijalankan saat agent memanggil, sebelum permintaan persetujuan dicatat (mis. membuat gambar agar Owner bisa melihatnya). */
+  prepare?(ctx: OfficeContext, args: z.infer<z.ZodObject<S>>): Promise<Record<string, unknown>>;
   execute(ctx: OfficeContext, args: z.infer<z.ZodObject<S>>, caller: Caller): Promise<unknown>;
 }
 
@@ -32,7 +35,7 @@ const OrgChangeShape = {
   type: z.enum(['hire', 'new_department', 'new_role', 'suspend', 'reactivate', 'retire']).describe('hire: tambah staf dari role yang ada (staf dirumahkan dipakai ulang lebih dulu); new_department: ruangan/divisi baru; new_role: role baru (otomatis merekrut satu staf); suspend: rumahkan agent (bisa dipakai kembali); reactivate: aktifkan kembali; retire: arsipkan agent yang tidak lagi diperlukan'),
   reason: z.string().min(3).max(500).describe('Alasan berbasis data, mis. antrean atau beban kerja'),
   role_id: z.string().max(64).optional().describe('hire: id role yang sudah ada'),
-  runtime: z.enum(['claude-cli', 'openrouter']).optional(),
+  runtime: z.enum(['claude-cli']).optional(),
   name: z.string().max(128).optional().describe('new_department / new_role: nama'),
   department_id: z.string().max(64).optional().describe('new_role: id divisi yang sudah ada'),
   color: z.string().max(9).optional(),
@@ -91,15 +94,26 @@ export const TOOLS: ToolDef[] = [
     id: 'instagram_publish',
     title: 'Publish ke Instagram',
     description:
-      'Minta publikasi foto + caption ke akun Instagram perusahaan yang sudah dihubungkan Owner. Tidak langsung tayang kecuali Owner mengizinkan publikasi otomatis.',
+      'Minta publikasi satu gambar + caption ke akun Instagram perusahaan yang sudah dihubungkan Owner. Gambar dibuat sistem dari image_text (teks pendek di atas latar putih, atau model gambar bila Owner mengaktifkannya; image_prompt memberi petunjuk visual untuk model). Tidak langsung tayang kecuali Owner mengizinkan publikasi otomatis.',
     risk: 'high',
     input: {
-      image_url: z.string().url().describe('URL gambar publik (JPEG) yang bisa diakses Instagram'),
       caption: z.string().min(1).max(2200),
+      image_text: z.string().min(1).max(400).optional().describe('Teks singkat yang tampil di gambar (pesan inti post). Wajib bila tanpa image_url.'),
+      image_prompt: z.string().max(1000).optional().describe('Petunjuk visual untuk model gambar; diabaikan bila model gambar tidak aktif'),
+      image_url: z.string().url().optional().describe('URL gambar publik (JPEG/PNG) yang sudah ada; bila diisi, sistem tidak membuat gambar'),
     },
-    async execute(ctx, { image_url, caption }) {
-      // Akun datang dari Instagram Login resmi (halaman Akses); tidak ada token yang diketik manual.
-      return publishInstagramImage(ctx, { imageUrl: image_url, caption });
+    async prepare(ctx, args) {
+      if (args.image_url) return args;
+      if (!args.image_text) throw new UserError('Isi image_text (teks di gambar) atau image_url');
+      const image = await createPostImage(ctx, { text: args.image_text, prompt: args.image_prompt });
+      return { ...args, image_file: image.file, image_source: image.source };
+    },
+    async execute(ctx, args) {
+      const file = (args as { image_file?: string }).image_file;
+      const imageUrl = file ? await publicImageUrl(ctx, file) : args.image_url;
+      if (!imageUrl) throw new UserError('Gambar post tidak ada');
+      // Akun datang dari NC-WA (halaman Akses); tidak ada token yang diketik manual.
+      return publishInstagramImage(ctx, { imageUrl, caption: args.caption });
     },
   }),
 ];

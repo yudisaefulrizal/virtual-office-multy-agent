@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { agents, providers } from '../db/schema';
 import { UserError } from '../domain';
 import { OpenRouterRuntime } from '../runtimes/openrouter';
+import { TEXT_PROVIDERS_OFF, textProvidersEnabled } from '../runtimes/text-providers';
 import type { RuntimeId } from '../runtimes/runtime';
 import { type OfficeContext, effectiveRuntime, withTx } from './context';
 import { promoteAllObjectives } from './office';
@@ -20,6 +21,7 @@ function register(ctx: OfficeContext, id: ProviderId, apiKey: string, defaultMod
 
 /** Saat start: daftarkan runtime untuk provider yang sudah dikonfigurasi Owner. */
 export async function loadProviders(ctx: OfficeContext) {
+  if (!textProvidersEnabled()) return;
   const rows = await ctx.db.select().from(providers);
   for (const r of rows) {
     if (!PROVIDER_IDS.includes(r.id as ProviderId)) continue;
@@ -32,6 +34,7 @@ export async function loadProviders(ctx: OfficeContext) {
 }
 
 export async function listProviders(ctx: OfficeContext) {
+  if (!textProvidersEnabled()) return [];
   const rows = await ctx.db.select().from(providers);
   return PROVIDER_IDS.map((id) => {
     const r = rows.find((x) => x.id === id);
@@ -44,6 +47,7 @@ export async function listProviders(ctx: OfficeContext) {
  * dibaca adapter. Agent yang menunggu provider ini otomatis aktif (DESIGN.md §4.5).
  */
 export async function setProvider(ctx: OfficeContext, id: ProviderId, input: { apiKey?: string; defaultModel: string }) {
+  if (!textProvidersEnabled()) throw new UserError(TEXT_PROVIDERS_OFF);
   const [existing] = await ctx.db.select().from(providers).where(eq(providers.id, id));
   const apiKey = input.apiKey?.trim() || (existing ? ctx.secrets.decrypt(existing.apiKeyEnc) : '');
   if (!apiKey) throw new UserError('API key wajib diisi');
@@ -74,6 +78,7 @@ export async function updateAgent(
   id: string,
   input: { runtime?: RuntimeId; model?: string | null; status?: 'active' | 'inactive' },
 ) {
+  if (input.runtime === 'openrouter' && !textProvidersEnabled()) throw new UserError(TEXT_PROVIDERS_OFF);
   await withTx(ctx, async (tx, emit) => {
     const [a] = await tx.select().from(agents).where(eq(agents.id, id));
     if (!a) throw new UserError('Agent tidak ditemukan');
@@ -92,6 +97,7 @@ export async function updateAgent(
  * (bisa dipindah ke runtime lain atau dipasang kembali). Task yang sedang berjalan boleh selesai.
  */
 export async function removeProvider(ctx: OfficeContext, id: ProviderId) {
+  if (!textProvidersEnabled()) throw new UserError(TEXT_PROVIDERS_OFF);
   await withTx(ctx, async (tx, emit) => {
     const [existing] = await tx.select().from(providers).where(eq(providers.id, id));
     if (!existing) throw new UserError('Provider belum dipasang');

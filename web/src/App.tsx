@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { api, useLive } from './api';
+import { api, onUnauthorized, useLive } from './api';
 import { AccessPage } from './pages/AccessPage';
 import { CompanyPage, ProfilePage } from './pages/CompanyPage';
 import { DecisionPage, DecisionsPage } from './pages/DecisionPage';
@@ -67,7 +67,7 @@ const Logo = () => (
   </svg>
 );
 
-function Rail({ section, needs }: { section: string; needs: number }) {
+function Rail({ section, needs, onLogout }: { section: string; needs: number; onLogout?: () => void }) {
   return (
     <aside className="rail" aria-label="Navigasi">
       <a href="#/" className="rail-logo" aria-label="Virtual Office" style={{ minHeight: 40, width: 40 }}><Logo /></a>
@@ -88,6 +88,12 @@ function Rail({ section, needs }: { section: string; needs: number }) {
             {m.label}
           </a>
         ))}
+        {onLogout && (
+          <a href="#/" onClick={(e) => (e.preventDefault(), onLogout())}>
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 4H5a1 1 0 00-1 1v10a1 1 0 001 1h3M12 7l3 3-3 3M15 10H8" /></svg>
+            Keluar
+          </a>
+        )}
       </div>
     </aside>
   );
@@ -141,7 +147,56 @@ function TopBar({ needs }: { needs: number }) {
   );
 }
 
+function LoginPage({ onDone }: { onDone: () => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 16 }}>
+      <form
+        className="card"
+        style={{ width: 'min(380px, 100%)', gap: 18 }}
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError(null);
+          try {
+            await api.login(code);
+            setCode('');
+            onDone();
+          } catch (err) {
+            setError((err as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Logo /><strong style={{ fontSize: 17 }}>Virtual Office</strong></div>
+        <div className="field">
+          <label htmlFor="access-code">Kode akses</label>
+          <input id="access-code" type="password" autoComplete="current-password" autoFocus value={code} onChange={(e) => setCode(e.target.value)} />
+        </div>
+        {error && <p className="error" role="alert" style={{ margin: 0 }}>{error}</p>}
+        <button className="btn" type="submit" disabled={busy || !code}>{busy ? 'Memeriksa…' : 'Masuk'}</button>
+      </form>
+    </main>
+  );
+}
+
+/** Memeriksa sesi dulu; dashboard (dan semua pemanggilan datanya) baru dimuat setelah boleh masuk. */
 export function App() {
+  const [session, setSession] = useState<{ required: boolean; authenticated: boolean } | null>(null);
+  const check = () => api.session().then(setSession).catch(() => setSession({ required: true, authenticated: false }));
+  useEffect(() => {
+    void check();
+    return onUnauthorized(() => setSession({ required: true, authenticated: false }));
+  }, []);
+  if (!session) return null;
+  if (!session.authenticated) return <LoginPage onDone={() => void check()} />;
+  return <Dashboard canLogout={session.required} onLogout={() => void api.logout().finally(() => window.location.reload())} />;
+}
+
+function Dashboard({ canLogout, onLogout }: { canLogout: boolean; onLogout: () => void }) {
   const route = useHashRoute();
   const objectiveMatch = route.match(/^\/objectives\/([0-9a-f-]{36})$/);
   const decisionMatch = route.match(/^\/decisions\/([0-9a-f-]{36})$/);
@@ -151,7 +206,7 @@ export function App() {
 
   return (
     <div className="shell">
-      <Rail section={section} needs={needs} />
+      <Rail section={section} needs={needs} onLogout={canLogout ? onLogout : undefined} />
       <div className="shell-main">
         <TopBar needs={needs} />
         {objectiveMatch ? (

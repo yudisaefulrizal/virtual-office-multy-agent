@@ -351,7 +351,7 @@ function BudgetCard({ id, budget }: { id: string; budget: { budgetUsdMicros: num
     <section className="card" aria-labelledby="budget" style={{ flex: 1 }}>
       <div className="row wrap between">
         <h2 id="budget">Budget API</h2>
-        <span className="small muted">Biaya nyata (OpenRouter/API key). Kuota langganan Claude tidak dihitung.</span>
+        <span className="small muted">Biaya nyata (API key). Kuota langganan Claude tidak dihitung.</span>
       </div>
       <div className="row wrap" style={{ gap: 16 }}>
         <span>Terpakai <strong>{usd(budget.spentUsdMicros)}</strong>{budget.budgetUsdMicros != null && <> dari <strong>{usd(budget.budgetUsdMicros)}</strong></>}</span>

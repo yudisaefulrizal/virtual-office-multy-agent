@@ -5,6 +5,7 @@ import type { Tx } from '../db/client';
 import { agents, departments, providers, roles } from '../db/schema';
 import { UserError, type Actor } from '../domain';
 import type { RuntimeId } from '../runtimes/runtime';
+import { TEXT_PROVIDERS_OFF, textProvidersEnabled } from '../runtimes/text-providers';
 import { type Emit, type OfficeContext, effectiveRuntime, withTx } from './context';
 import { getAllSettings } from './settings';
 import { findReusable, isGone, setLifecycle } from './workforce';
@@ -75,6 +76,7 @@ export async function hireAgent(
     }
   }
   const runtime = input.runtime ?? ((active[0] ?? staff[0])?.runtime as RuntimeId | undefined) ?? 'claude-cli';
+  if (runtime === 'openrouter' && !textProvidersEnabled()) throw new UserError(TEXT_PROVIDERS_OFF);
 
   let name = role.name;
   for (let n = staff.length + 1; (await tx.select({ id: agents.id }).from(agents).where(eq(agents.name, name))).length > 0; n++) {

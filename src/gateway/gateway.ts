@@ -72,7 +72,14 @@ export class Gateway {
 
     const parsed = z.object(tool.input).safeParse(rawArgs ?? {});
     if (!parsed.success) return { ok: false, message: `Argumen tidak valid: ${parsed.error.message}` };
-    const args = parsed.data;
+    let args: Record<string, unknown> = parsed.data;
+    if (tool.prepare) {
+      try {
+        args = await tool.prepare(ctx, parsed.data as never);
+      } catch (err) {
+        return { ok: false, message: err instanceof UserError ? err.message : `Persiapan tool gagal: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
 
     if (tool.risk === 'high') {
       const approvalId = randomUUID();

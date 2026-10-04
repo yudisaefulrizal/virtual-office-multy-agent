@@ -99,7 +99,7 @@ export const DecisionOutput = z.strictObject({
     .array(
       z.strictObject({
         role: z.string().min(2).describe('Hanya role yang sudah ada'),
-        runtime: z.enum(['claude-cli', 'openrouter']),
+        runtime: z.enum(['claude-cli']),
         reason: z.string().min(1),
       }),
     )
@@ -108,7 +108,7 @@ export const DecisionOutput = z.strictObject({
     .array(
       z.strictObject({
         type: z.enum(['provider', 'budget', 'tool', 'other']),
-        key: z.string().min(1).describe('mis. openrouter, instagram'),
+        key: z.string().min(1).describe('mis. instagram'),
         reason: z.string().min(1),
         amount_usd: z.number().min(0).optional(),
       }),

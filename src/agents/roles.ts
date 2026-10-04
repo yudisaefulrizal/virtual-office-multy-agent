@@ -109,7 +109,7 @@ export interface AgentSeed {
   status?: 'active' | 'inactive' | 'waiting_provider';
 }
 
-/** Karyawan awal. Market Researcher menunggu provider OpenRouter (DESIGN.md §4.5). */
+/** Karyawan awal. Semua berjalan di Claude CLI; OpenRouter hanya untuk model gambar. */
 export const INITIAL_AGENTS: AgentSeed[] = [
   { name: 'CEO', roleId: 'ceo', runtime: 'claude-cli' },
   { name: 'CFO', roleId: 'cfo', runtime: 'claude-cli', supervisor: 'CEO' },
@@ -117,7 +117,7 @@ export const INITIAL_AGENTS: AgentSeed[] = [
   { name: 'HRD', roleId: 'hrd', runtime: 'claude-cli', supervisor: 'CEO' },
   { name: 'Manager', roleId: 'manager', runtime: 'claude-cli', supervisor: 'CEO' },
   { name: 'Research Agent', roleId: 'researcher', runtime: 'claude-cli', supervisor: 'Manager' },
-  { name: 'Market Researcher', roleId: 'market_researcher', runtime: 'openrouter', supervisor: 'Manager', status: 'waiting_provider' },
+  { name: 'Market Researcher', roleId: 'market_researcher', runtime: 'claude-cli', supervisor: 'Manager' },
   { name: 'Content Writer', roleId: 'content_writer', runtime: 'claude-cli', supervisor: 'Manager' },
 ];
 
@@ -210,7 +210,7 @@ export function decisionInstructions(ownerFeedback?: string) {
     'Ambil keputusan strategis berdasarkan visimu dan hasil konsultasi tim.',
     '',
     '- Usulan ini menunggu persetujuan Owner sebelum dijalankan.',
-    '- Tim hanya boleh memakai role yang sudah ada. Pilih runtime openrouter untuk role yang cukup bernalar (hemat kuota Claude), claude-cli untuk yang butuh file atau riset web.',
+    '- Tim hanya boleh memakai role yang sudah ada. Semua role berjalan di runtime claude-cli; jangan meminta provider atau runtime lain.',
     '- Tuliskan di owner_requests hal yang perlu Owner sediakan (provider, budget, akses tool). Jangan pernah meminta API key dituliskan.',
     '- execution_brief adalah arahan untuk Manager menyusun rencana kerja.',
     ownerFeedback ? `\n## Catatan revisi dari Owner\n\n${ownerFeedback}` : '',

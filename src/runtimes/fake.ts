@@ -88,7 +88,7 @@ async function defaultHandler(req: RunRequest): Promise<Partial<RunResult>> {
     };
   }
   if (props.includes('recommendation')) {
-    return { output: { analysis: 'Analisis fake.', risks: ['Kuota terbatas'], recommendation: 'Mulai kecil.', alternatives: ['Pakai OpenRouter untuk konsultasi'] } };
+    return { output: { analysis: 'Analisis fake.', risks: ['Kuota terbatas'], recommendation: 'Mulai kecil.', alternatives: ['Kurangi frekuensi posting'] } };
   }
   if (props.includes('verdict')) {
     return { output: { verdict: 'accept', feedback: 'Hasil sesuai objective.', revisions: [] } };

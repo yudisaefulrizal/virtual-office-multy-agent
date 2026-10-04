@@ -21,6 +21,11 @@ export const SETTING_DEFAULTS = {
   claude_max_runs_per_window: -1,
   /** Owner mereset hitungan kuota: run sebelum waktu ini (ISO) tidak dihitung. Kosong = tidak pernah direset. */
   quota_counted_since: '',
+  /** Kuota model gambar (OpenRouter), jendela bergulir. 0 = tanpa batas. Lewat batas → gambar teks di latar putih. */
+  image_max_per_day: 10,
+  image_max_cost_usd_per_day: 1,
+  /** Alamat server yang bisa dijangkau Instagram (mis. https://kantor.contoh.id); gambar post disajikan di /media/. */
+  public_base_url: '',
   /** Piagam perusahaan (jenis usaha, produk, batas) dan status operasi otonom. null = belum diisi. */
   company: null as Company | null,
 };

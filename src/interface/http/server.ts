@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { asc, eq } from 'drizzle-orm';
@@ -10,7 +11,8 @@ import { type OfficeContext, type StoredEvent, withTx } from '../../orchestrator
 import { KNOWLEDGE_CATEGORIES, isStale, listKnowledge } from '../../orchestrator/knowledge';
 import { applyOrgChange, listOrg } from '../../orchestrator/org';
 import { companyStatus, saveCompany, setCompanyRunning } from '../../orchestrator/company';
-import { disconnectInstagram, finishInstagramLogin, instagramOverview, refreshInstagram, removeInstagramApp, setInstagramApp, startInstagramLogin } from '../../orchestrator/instagram';
+import { createPostImage, imageModelConfig, imageUsage, isMediaFile, mediaPath, removeImageModel, setImageModel } from '../../orchestrator/imagegen';
+import { instagramOverview, removeInstagramKey, setInstagramKey } from '../../orchestrator/instagram';
 import { createObjective, promoteAllObjectives } from '../../orchestrator/office';
 import { agentPerformance, changeAgentLifecycle } from '../../orchestrator/workforce';
 import { deleteObjective } from '../../orchestrator/cleanup';
@@ -18,6 +20,7 @@ import { displayName, listResults, objectiveZip, readWorkspaceFile as readArtifa
 import { setObjectiveBudget } from '../../orchestrator/budget';
 import { setSchedule } from '../../orchestrator/scheduler';
 import { usageStats } from '../../orchestrator/stats';
+import { AccessGate } from './access';
 import { registerMcp } from '../../gateway/mcp';
 import { PROVIDER_IDS, listProviders, removeProvider, setProvider, updateAgent } from '../../orchestrator/providers';
 import { decisionDetail, listApprovals, listDecisions, listObjectives, listTools, objectiveTrace, officeView } from '../../orchestrator/queries';
@@ -40,26 +43,62 @@ const ScheduleBody = z.object({
 });
 const IdParams = z.object({ id: z.uuid() });
 
-export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string) {
+export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string, opts: { accessCode?: string } = {}) {
   const app = Fastify({ logger: { level: 'warn' } });
 
-  // Dashboard tidak punya login: hanya boleh dibuka dari komputer ini. Lewat tunnel/proxy publik hanya
-  // callback Instagram yang dilayani; yang lain 404. Permintaan dianggap dari luar bila Host bukan loopback
-  // ATAU ada header proxy (tunnel biasa menambahkannya walau Host ditulis ulang ke localhost).
+  // Dari komputer ini dashboard terbuka. Lewat alamat publik/tunnel (vo.nuscode.id) perlu masuk dengan
+  // VO_ACCESS_CODE; tanpa kode, semuanya 404. /mcp (Gateway untuk agent) tidak pernah terbuka dari luar.
+  // Satu pengecualian tanpa login: gambar post di /media/<acak>.png, agar Instagram bisa mengambilnya
+  // (nama file acak 128-bit, hanya png/jpg dari folder media; tidak ada daftar atau jalur lain).
+  const gate = new AccessGate(opts.accessCode, ctx.secrets);
+  const MEDIA_URL = /^\/media\/([0-9a-f]{32}\.(?:png|jpg))$/;
   app.addHook('onRequest', async (req, reply) => {
-    const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
-    const proxied = ['cf-connecting-ip', 'x-forwarded-for', 'x-forwarded-host', 'forwarded', 'x-real-ip'].some((h) => req.headers[h] !== undefined);
-    const local = ['localhost', '127.0.0.1', '::1'].includes(host) && !proxied;
-    if (local) return;
-    if (req.method === 'GET' && req.url.split('?')[0] === '/auth/instagram/callback') return;
-    return reply.status(404).send({ error: 'Tidak ditemukan' });
+    const urlPath = req.url.split('?')[0]!;
+    if (req.method === 'GET' && MEDIA_URL.test(urlPath)) return;
+    if (gate.isLocal(req)) return;
+    if (!gate.enabled || urlPath === '/mcp' || urlPath.startsWith('/mcp/')) return reply.status(404).send({ error: 'Tidak ditemukan' });
+    if ((req.method === 'POST' && (urlPath === '/api/login' || urlPath === '/api/logout')) || (req.method === 'GET' && urlPath === '/api/session')) return;
+    if (gate.authenticated(req)) return;
+    // Berkas UI (halaman masuk) boleh dimuat; semua data lewat /api dan butuh sesi.
+    if (!urlPath.startsWith('/api/') && (req.method === 'GET' || req.method === 'HEAD')) return;
+    return reply.status(401).send({ error: 'Perlu kode akses' });
   });
+
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('x-frame-options', 'DENY').header('x-content-type-options', 'nosniff').header('referrer-policy', 'no-referrer');
+  });
+
+  app.get('/api/session', async (req) => {
+    const local = gate.isLocal(req);
+    return { required: !local, authenticated: local || gate.authenticated(req) };
+  });
+  app.post('/api/login', async (req, reply) => {
+    if (!gate.enabled) return reply.status(404).send({ error: 'Tidak ditemukan' });
+    const { code } = z.object({ code: z.string().max(200) }).parse(req.body);
+    const wait = gate.locked(req);
+    if (wait > 0) return reply.status(429).header('retry-after', String(wait)).send({ error: `Terlalu banyak percobaan. Coba lagi dalam ${Math.ceil(wait / 60)} menit.` });
+    const cookie = gate.attempt(req, code);
+    if (!cookie) {
+      await new Promise((r) => setTimeout(r, 400));
+      return reply.status(401).send({ error: 'Kode akses salah' });
+    }
+    return reply.header('set-cookie', cookie).send({ ok: true });
+  });
+  app.post('/api/logout', async (_req, reply) => reply.header('set-cookie', gate.logoutCookie()).send({ ok: true }));
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof z.ZodError) return reply.status(400).send({ error: 'Input tidak valid', issues: err.issues });
     if (err instanceof UserError) return reply.status(400).send({ error: err.message });
     app.log.error(err);
     return reply.status(500).send({ error: 'Terjadi kesalahan di server' });
+  });
+
+  app.get('/media/:file', async (req, reply) => {
+    const { file } = z.object({ file: z.string() }).parse(req.params);
+    if (!isMediaFile(file)) return reply.status(404).send({ error: 'Tidak ditemukan' });
+    const buf = await readFile(mediaPath(ctx, file)).catch(() => null);
+    if (!buf) return reply.status(404).send({ error: 'Tidak ditemukan' });
+    return reply.type(file.endsWith('.png') ? 'image/png' : 'image/jpeg').header('cache-control', 'public, max-age=86400').send(buf);
   });
 
   app.get('/api/office', () => officeView(ctx, (id) => worker.runtimeState(id)));
@@ -173,39 +212,32 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
     return { ok: true };
   });
 
-  // Instagram Login resmi: Owner memberi izin di instagram.com; token disimpan terenkripsi dan diperpanjang otomatis.
+  // Instagram lewat NC-WA: Owner hanya mengisi API key (ncig_…); akun resmi sudah terhubung di ncwa.nuscode.id.
   app.get('/api/instagram', () => instagramOverview(ctx));
-  app.put('/api/instagram/app', async (req) => {
-    const body = z.object({ appId: z.string().trim().max(40), appSecret: z.string().trim().max(200).optional() }).parse(req.body);
-    await setInstagramApp(ctx, body);
+  app.put('/api/instagram/key', async (req) => {
+    await setInstagramKey(ctx, z.object({ apiKey: z.string().trim().min(1).max(200) }).parse(req.body));
     return instagramOverview(ctx);
   });
-  app.delete('/api/instagram/app', async () => {
-    await removeInstagramApp(ctx);
+  app.delete('/api/instagram/key', async () => {
+    await removeInstagramKey(ctx);
     return instagramOverview(ctx);
   });
-  app.post('/api/instagram/connect', () => startInstagramLogin(ctx));
-  app.post('/api/instagram/accounts/:id/refresh', async (req) => {
-    const { id } = z.object({ id: z.string().regex(/^\d{3,32}$/) }).parse(req.params);
-    await refreshInstagram(ctx, id);
-    return instagramOverview(ctx);
+
+  // Model gambar (OpenRouter, khusus gambar). Tanpa model aktif, gambar post berupa teks di latar putih.
+  const imageModelStatus = async () => ({ ...(await imageModelConfig(ctx)), usage: await imageUsage(ctx) });
+  app.get('/api/image-model', imageModelStatus);
+  app.put('/api/image-model', async (req) => {
+    await setImageModel(ctx, z.object({ apiKey: z.string().trim().max(500).optional(), model: z.string().trim().min(3).max(128), enabled: z.boolean() }).parse(req.body));
+    return imageModelStatus();
   });
-  app.delete('/api/instagram/accounts/:id', async (req) => {
-    const { id } = z.object({ id: z.string().regex(/^\d{3,32}$/) }).parse(req.params);
-    await disconnectInstagram(ctx, id);
-    return instagramOverview(ctx);
+  app.delete('/api/image-model', async () => {
+    await removeImageModel(ctx);
+    return imageModelStatus();
   });
-  // Tujuan redirect dari Instagram; hasilnya dibawa ke halaman Akses.
-  app.get('/auth/instagram/callback', async (req, reply) => {
-    let result = 'error';
-    try {
-      result = (await finishInstagramLogin(ctx, req.query as Record<string, unknown>)).result;
-    } catch (err) {
-      app.log.error(err);
-    }
-    // Browser Owner tiba lewat alamat publik; kembalikan ke dashboard lokal yang hanya bisa dibuka dari komputer ini.
-    return reply.redirect(`${ctx.uiOrigin ?? ''}/#/access?instagram=${result}`);
-  });
+  app.post('/api/image-model/test', async () => ({
+    ...(await createPostImage(ctx, { text: 'Contoh gambar dari Virtual Office' })),
+    usage: (await imageModelStatus()).usage,
+  }));
 
   app.get('/api/tools', () => listTools(ctx));
   app.put('/api/tools/:id/credential', async (req, reply) => {
@@ -334,6 +366,9 @@ export function buildServer(ctx: OfficeContext, worker: Worker, webDist?: string
         hire_wait_seconds: z.number().int().min(10).max(3600).optional(),
         suspend_idle_minutes: z.number().int().min(0).max(1440).optional(),
         claude_max_runs_per_window: z.number().int().min(-1).max(1000).optional(),
+        image_max_per_day: z.number().int().min(0).max(10_000).optional(),
+        image_max_cost_usd_per_day: z.number().min(0).max(100_000).optional(),
+        public_base_url: z.union([z.literal(''), z.url({ protocol: /^https?$/ })]).optional(),
       })
       .parse(req.body);
     await withTx(ctx, async (tx, emit) => {

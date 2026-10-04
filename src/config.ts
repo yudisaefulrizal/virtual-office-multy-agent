@@ -18,12 +18,10 @@ const int = (key: string, fallback: number) => {
 export const config = {
   databaseUrl: str('DATABASE_URL', 'mysql://vo:vo@localhost:3307/vo'),
   port: int('PORT', 8070),
-  /** Alamat yang dipakai Meta untuk mengembalikan Owner setelah login Instagram (harus sama dengan Redirect URI di Meta App). */
-  appOrigin: str('APP_ORIGIN', `http://localhost:${process.env.PORT || 8070}`).replace(/\/+$/, ''),
-  /** Alamat dashboard lokal tempat Owner kembali setelah login Instagram. */
-  uiOrigin: str('UI_ORIGIN', `http://localhost:${process.env.PORT || 8070}`).replace(/\/+$/, ''),
   workspacesDir: path.resolve(str('WORKSPACES_DIR', './workspaces')),
   defaultModel: str('VO_DEFAULT_MODEL', 'sonnet'),
+  /** Kode untuk membuka dashboard lewat alamat publik (vo.nuscode.id). Kosong = hanya bisa dari komputer ini. */
+  accessCode: process.env.VO_ACCESS_CODE?.trim() || undefined,
   forceRuntime: process.env.VO_FORCE_RUNTIME || undefined,
   /** 64 karakter hex. Kosong = dibuat otomatis di file .vo-secret. */
   secretKey: process.env.VO_SECRET_KEY || undefined,

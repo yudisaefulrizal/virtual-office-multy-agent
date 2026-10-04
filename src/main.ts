@@ -17,7 +17,7 @@ await runMigrations(config.databaseUrl);
 const { db, close } = createDb(config.databaseUrl);
 const ctx = createContext(config, db);
 await seedOrganization(ctx);
-await loadProviders(ctx);
+await loadProviders(ctx); // no-op kecuali VO_TEXT_PROVIDERS=1
 // Agent menjangkau Gateway lewat loopback; token sesi membatasi aksesnya.
 ctx.gateway = new Gateway(ctx, `http://127.0.0.1:${config.port}`);
 
@@ -25,10 +25,11 @@ const worker = new Worker(ctx);
 await worker.start();
 
 const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web/dist');
-const app = buildServer(ctx, worker, webDist);
+const app = buildServer(ctx, worker, webDist, { accessCode: config.accessCode });
 await app.listen({ port: config.port, host: '127.0.0.1' });
 
 console.log(`Virtual Office berjalan di http://localhost:${config.port}`);
+console.log(config.accessCode ? 'Akses publik: aktif, wajib kode akses (VO_ACCESS_CODE)' : 'Akses publik: mati (VO_ACCESS_CODE kosong); dashboard hanya dari komputer ini');
 if (ctx.forceRuntime) console.log(`Semua agent memakai runtime: ${ctx.forceRuntime}`);
 
 const shutdown = async () => {

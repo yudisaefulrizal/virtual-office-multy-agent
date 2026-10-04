@@ -313,3 +313,16 @@ export const instagramStates = mysqlTable('instagram_states', {
   stateHash: varchar('state_hash', { length: 64 }).primaryKey(),
   createdAt: createdAt(),
 });
+
+/** Setiap pemanggilan model gambar (OpenRouter), dipakai untuk menghitung kuota gambar. Renderer teks sendiri tidak dicatat. */
+export const imageGenerations = mysqlTable(
+  'image_generations',
+  {
+    id: id().primaryKey(),
+    model: varchar('model', { length: 128 }).notNull(),
+    status: varchar('status', { length: 16 }).notNull(), // ok | failed
+    costUsdMicros: bigint('cost_usd_micros', { mode: 'number' }).notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [index('image_generations_created').on(t.createdAt)],
+);

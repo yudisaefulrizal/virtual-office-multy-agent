@@ -78,6 +78,13 @@
       "when": 1791022509502,
       "tag": "0010_instagram_login",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1791074251280,
+      "tag": "0011_image_generations",
+      "breakpoints": true
     }
   ]
 }

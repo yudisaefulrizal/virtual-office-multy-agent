@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 /**
@@ -18,6 +18,11 @@ export class SecretBox {
     if (envKey) return new SecretBox(envKey);
     if (!existsSync(file)) writeFileSync(file, randomBytes(32).toString('hex'), { mode: 0o600 });
     return new SecretBox(readFileSync(file, 'utf8').trim());
+  }
+
+  /** Kunci turunan per tujuan (HMAC), agar kunci utama tidak dipakai langsung di luar enkripsi. */
+  derive(purpose: string) {
+    return createHmac('sha256', this.key).update(purpose).digest();
   }
 
   encrypt(plain: string) {

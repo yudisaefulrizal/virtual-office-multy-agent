@@ -12,12 +12,13 @@ Status: seluruh roadmap di [docs/DESIGN.md](docs/DESIGN.md) sudah diimplementasi
 | Paralel | Satu karyawan satu task; staf role yang sama bekerja bersamaan. Batas paralel runtime turun sendiri saat rate limit dan naik lagi saat aman |
 | Strategi (Slice 3) | CEO → konsultasi selektif (R&D, CFO, CTO, HRD) → usulan keputusan → persetujuan Owner → Manager |
 | Eksekusi (Slice 2) | Manager merencanakan task + dependency, tim mengerjakan, Manager mereview (maks. 2 revisi) |
-| Runtime | Claude CLI (utama, login langganan) dan OpenRouter (role yang cukup bernalar, hemat kuota) |
+| Runtime | Claude CLI (login langganan) untuk semua agent. OpenRouter hanya untuk model gambar; runtime teks OpenRouter ada di kode tetapi mati (`VO_TEXT_PROVIDERS=1` untuk menyalakan) |
 | Knowledge | Hasil riset disimpan, dipakai ulang, dan ditandai untuk verifikasi ulang per kategori |
 | Tool Gateway | MCP milik Virtual Office: izin per role, tool berisiko menunggu persetujuan Owner, credential terenkripsi |
 | Budget | Batas biaya API nyata per objective; lewat batas → task ditunda |
 | Scheduler | Objective berulang (harian/interval) tanpa mengulang strategi dan perencanaan |
-| Akses untuk AI | Halaman **Akses**: satu tempat untuk API key OpenRouter dan **login Instagram resmi** (Instagram Login lewat Meta, seperti nc-wa-official: izin di instagram.com, token 60 hari terenkripsi dan diperpanjang otomatis). Disimpan terenkripsi, tidak pernah ditampilkan atau dikirim ke agent; menampilkan siapa yang memakainya |
+| Akses untuk AI | Halaman **Akses**: satu tempat untuk model gambar OpenRouter dan **API key NC-WA** untuk Instagram (akun resmi sudah terhubung di ncwa.nuscode.id). Disimpan terenkripsi, tidak pernah ditampilkan atau dikirim ke agent; menampilkan siapa yang memakainya |
+| Gambar post | Agent mengisi `image_text`; sistem membuat gambarnya. Bila model gambar OpenRouter diaktifkan di halaman **Akses** (key + vendor/model, khusus gambar) dan kuota masih ada, model yang dipakai. Selain itu, atau bila model gagal, gambar berupa teks di latar putih bersih (1080×1350) buatan sendiri, sehingga post tidak pernah tertunda. Kuota (jumlah gambar dan biaya, keduanya per 24 jam) diatur Owner di halaman yang sama; 0 = tanpa batas. Instagram mengambil gambar lewat `/media/<acak>.png`, satu-satunya jalur yang terbuka dari luar, jadi **Alamat publik server** wajib diisi agar publish jalan |
 | Perusahaan otonom | Halaman **Perusahaan**: Owner cukup mengisi jenis usaha, produk, dan batas, lalu menjalankan. CEO menyusun agenda sendiri, objective dikerjakan tanpa persetujuan selama dalam batas (budget, jumlah pekerjaan, larangan); hanya hal di luar batas yang dieskalasi ke Owner |
 | Tenaga kerja adaptif | Agent bisa dirumahkan, diaktifkan kembali, atau dipensiunkan (arsip); tenure permanent/on-demand/sementara; HRD memakai ulang staf dirumahkan sebelum merekrut baru dan merumahkan staf berlebih yang menganggur; halaman Pengaturan menampilkan performa dan saran HRD |
 | Pembersihan | Objective yang sudah selesai/gagal/dibatalkan bisa dihapus dari halamannya (task, sesi, hasil, dan folder kerja ikut terhapus; knowledge tetap) |
@@ -72,11 +73,20 @@ Semua agent memakai runtime palsu yang menulis `out/result.md`. Cocok untuk menc
 
 Setelah memperbarui kode, restart server (`npm start`): migrasi database berjalan otomatis saat start.
 
+## Akses lewat alamat publik
+
+Dari komputer ini dashboard terbuka langsung. Lewat alamat publik atau tunnel (mis. vo.nuscode.id), isi `VO_ACCESS_CODE` di `.env` (minimal 10 karakter) lalu restart: pengunjung harus memasukkan kode itu di halaman masuk. Kosong = dari luar semuanya 404.
+
+- Sesi berupa cookie bertanda tangan (HttpOnly, SameSite=Strict, Secure di HTTPS) berlaku 7 hari. Mengganti kode memutus semua sesi; tombol **Keluar** ada di rel kiri.
+- Salah kode 5 kali dari satu alamat mengunci alamat itu 15 menit; ada juga kunci total bila banyak alamat mencoba.
+- `/mcp` (Gateway untuk agent) tidak pernah terbuka dari luar. Satu-satunya jalur tanpa login adalah `/media/<acak>.png` untuk Instagram.
+- Tunnel harus meneruskan header proxy (`X-Forwarded-For`/`CF-Connecting-IP`, yang ditambahkan Cloudflare Tunnel dan nginx). Permintaan tanpa header itu dan ber-Host `localhost` dianggap dari komputer ini dan tidak diminta kode.
+
 ## Pengaturan yang Anda isi sendiri
 
 Di halaman **Pengaturan**:
 
-- **OpenRouter**: API key + model default. Agent yang menunggu provider (mis. Market Researcher) aktif otomatis. Lalu pindahkan CFO/CTO/HRD ke `openrouter` agar konsultasi tidak memakai kuota Claude.
+- **Model gambar (OpenRouter)**: API key, vendor/model, kuota per 24 jam, dan alamat publik server. Key ini hanya dipakai untuk gambar. Runtime teks OpenRouter dimatikan secara bawaan (`VO_TEXT_PROVIDERS=1` menyalakannya kembali, lalu kartu OpenRouter teks muncul di Akses).
 - **Instagram**: access token Graph API, Instagram Business Account ID, dan versi API. Publish hanya terjadi setelah Anda menyetujui permintaan agent di kotak "Perlu Anda".
 
 Credential disimpan terenkripsi (AES-256-GCM) dengan kunci di `.vo-secret` (dibuat otomatis) atau `VO_SECRET_KEY`. **Jangan hapus `.vo-secret`**: tanpa kunci itu credential tersimpan tidak bisa dibuka dan harus dimasukkan ulang.
@@ -100,7 +110,7 @@ Setiap sesi berjalan dengan `--restricted` (tanpa Bash/eksekusi kode, file hanya
 
 ## Belum diuji dengan layanan sungguhan
 
-- OpenRouter (butuh API key): adapter diuji dengan respons tiruan.
+- OpenRouter (butuh API key): adapter teks dan pembuat gambar diuji dengan respons tiruan.
 - Instagram publish (butuh token Graph API dan URL gambar publik): diuji dengan Graph API tiruan.
 - Pesan rate limit Claude: polanya masih perkiraan sampai kuota benar-benar habis.
 

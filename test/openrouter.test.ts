@@ -2,13 +2,17 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { agents, providers } from '../src/db/schema';
 import { listProviders, removeProvider, setProvider } from '../src/orchestrator/providers';
 import { OpenRouterRuntime } from '../src/runtimes/openrouter';
 import type { RunRequest } from '../src/runtimes/runtime';
 import { SecretBox } from '../src/secrets';
 import { setupOffice } from './helpers';
+
+// Runtime teks OpenRouter mati secara bawaan; berkas ini menguji adapter dan jalur provider saat dinyalakan.
+beforeAll(() => void (process.env.VO_TEXT_PROVIDERS = '1'));
+afterAll(() => void delete process.env.VO_TEXT_PROVIDERS);
 
 const req = async (over: Partial<RunRequest> = {}): Promise<RunRequest> => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'vo-or-'));
@@ -86,6 +90,10 @@ describe('SecretBox', () => {
   });
 });
 
+/** Seed sekarang memakai claude-cli untuk semua; tes provider memulai dari agent yang sudah dipindah ke openrouter. */
+const moveToOpenRouter = (o: Awaited<ReturnType<typeof setupOffice>>) =>
+  o.db.update(agents).set({ runtime: 'openrouter', model: null, status: 'waiting_provider' }).where(eq(agents.name, 'Market Researcher'));
+
 describe('Provider OpenRouter dipasang Owner', () => {
   let cleanup: (() => Promise<void>) | undefined;
   afterEach(async () => {
@@ -96,6 +104,7 @@ describe('Provider OpenRouter dipasang Owner', () => {
   it('menyimpan key terenkripsi, mendaftarkan runtime, dan mengaktifkan agent yang menunggu', async () => {
     const o = await setupOffice();
     cleanup = async () => (await o.worker.stop(), await o.close());
+    await moveToOpenRouter(o);
     const [mr] = await o.db.select().from(agents).where(eq(agents.name, 'Market Researcher'));
     expect(mr?.status).toBe('waiting_provider');
 
@@ -116,6 +125,7 @@ describe('Provider OpenRouter dipasang Owner', () => {
     const o = await setupOffice();
     cleanup = async () => (await o.worker.stop(), await o.close());
     await expect(removeProvider(o.ctx, 'openrouter')).rejects.toThrow(/belum dipasang/);
+    await moveToOpenRouter(o);
     await setProvider(o.ctx, 'openrouter', { apiKey: 'sk-or-abcd1234', defaultModel: 'vendor/model' });
     await removeProvider(o.ctx, 'openrouter');
 
