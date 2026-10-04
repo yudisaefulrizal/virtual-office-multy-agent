@@ -193,7 +193,7 @@ th:first-child, td:first-child { padding-left: 0; }
 .tabs-dark { display: inline-flex; gap: 2px; padding: 4px; }
 .tabs-dark button { height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-3); font-weight: 700; font-size: 12px; cursor: pointer; }
 .tabs-dark button.on { background: var(--surface-3); color: var(--ink); }
-.counts { display: inline-flex; align-items: center; gap: 14px; height: 38px; padding: 0 14px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.counts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 38px; padding: 9px 14px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
 .counts span { display: inline-flex; align-items: center; gap: 6px; }
 .counts b { font-family: var(--mono); color: var(--ink); font-weight: 500; }
 .stage-agent { position: absolute; z-index: 5; left: 12px; bottom: 12px; width: min(320px, calc(100% - 24px)); }
@@ -244,6 +244,10 @@ th:first-child, td:first-child { padding-left: 0; }
 .scene-card { background: var(--scene); border: 1px solid var(--scene-line); border-radius: 14px; overflow: hidden; color: var(--ink); display: flex; flex-direction: column; }
 .scene-canvas { height: 640px; position: relative; }
 .scene-wrap { position: absolute; inset: 0; overflow: hidden; }
+.scene-tools { position: absolute; z-index: 5; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; padding: 4px; gap: 4px; white-space: nowrap; }
+.scene-tools button { border: 0; border-radius: 8px; padding: 7px 10px; background: transparent; color: #dce5ef; font: inherit; font-size: 11px; cursor: pointer; }
+.scene-tools button:hover, .scene-tools button[aria-pressed='true'] { background: rgba(255, 255, 255, 0.1); }
+.scene-tools button:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .labels-layer { position: absolute; inset: 0; pointer-events: none; }
 .label-anchor { position: absolute; left: 0; top: 0; will-change: transform; }
 .label-center { transform: translate(-30%, -50%); }

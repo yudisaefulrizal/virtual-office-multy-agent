@@ -1,0 +1,10 @@
+Generator: built-in image_gen tool
+Output: office-concept.png
+
+Use case: stylized-concept
+Asset type: visual design reference for an existing interactive 3D virtual office with animated staff.
+Primary request: Design a polished isometric cutaway office diorama, functional and believable, with four department workrooms, a meeting room seating eight, a coffee pantry with sofa, and a compact server room. All rooms connect through clearly visible wide central circulation, with real door gaps, generous space behind chairs, no furniture obstructing paths.
+Style/medium: high quality architectural 3D miniature render, soft rounded furniture, realistic materials, simplified friendly human staff.
+Composition/framing: elevated orthographic three-quarter view, full single floor visible on a raised rounded rectangular foundation against a deep slate navy background; low glass partitions reveal all workspaces; open front and right perimeter.
+Lighting/mood: warm daylight, soft contact shadows, warm wood desktops, ivory walls, light neutral floors, muted teal upholstery, restrained room-color accents, indoor greenery. Employees shown working at desks, sitting around the meeting table, and walking naturally through circulation.
+Constraints: this is a practical reference for geometry made in Three.js; no interface panels, no text, no logos, no watermarks; do not use arrows or marked paths.

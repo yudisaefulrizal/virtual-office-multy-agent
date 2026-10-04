@@ -4,7 +4,7 @@ import type { Pt } from './pathfinding';
 /**
  * Perilaku avatar di satu lantai. Murni kosmetik dan berjalan di browser: tidak memakai server
  * dan tidak memakai kuota. Prioritas selalu mengikuti kondisi nyata, jadi tampilan tidak menipu:
- * rapat > serah-terima hasil > bekerja di meja > aktivitas acak (hanya saat benar-benar menganggur).
+ * nonaktif > rapat > pekerjaan/antrean nyata > serah-terima hasil > aktivitas acak.
  */
 
 export type Pose = 'stand' | 'sit' | 'walk';
@@ -74,10 +74,12 @@ interface Mind extends AgentState {
   seatedAt: Seat | null;
   rng: () => number;
   group: Rendezvous | null;
+  handover: string | null;
+  retryAt: number;
 }
 
 export const WALK_SPEED = 1.7;
-/** Berapa lama setelah selesai task avatar masih dianggap perlu menyerahkan hasil. */
+/** Jendela penerimaan event baru; event yang sudah diterima boleh antre hingga satu menit. */
 export const HANDOVER_WINDOW_MS = 9000;
 
 const ROLE_ORDER = ['ceo', 'cfo', 'cto', 'hrd', 'manager', 'researcher', 'market_researcher', 'content_writer'];
@@ -113,9 +115,12 @@ export class BehaviorEngine {
   /** Tempat yang sedang dipakai (kopi, jendela, sofa, ...): satu orang per tempat. */
   private claims = new Map<string, string>();
   private doneHandovers = new Set<string>();
+  private pendingHandovers = new Map<string, number>();
   private inputs: EngineInputs = { agents: [], meetingIds: new Set(), handovers: new Map(), managerId: null };
   private pantry: PantryLayout | undefined;
   private meetingSeats: Seat[];
+  private meetingPlaces = new Map<string, { seat: Seat; sit: boolean }>();
+  private meetingKey = '';
   private time = 0;
 
   constructor(
@@ -143,6 +148,8 @@ export class BehaviorEngine {
         seatedAt: home,
         rng: mulberry32(hash(a.id)),
         group: null,
+        handover: null,
+        retryAt: 0,
         x: home.x,
         z: home.z,
         yaw: home.yaw,
@@ -168,38 +175,85 @@ export class BehaviorEngine {
   setInputs(inputs: EngineInputs, now: number) {
     this.inputs = inputs;
     this.time = now;
+    const wallNow = Date.now();
+    for (const [id, start] of inputs.handovers) {
+      if (Number.isFinite(start) && start <= wallNow && wallNow - start <= HANDOVER_WINDOW_MS && start > (this.pendingHandovers.get(id) ?? -Infinity) && !this.doneHandovers.has(`${id}:${start}`)) this.pendingHandovers.set(id, start);
+    }
+    for (const [id, start] of this.pendingHandovers) {
+      if (wallNow - start > 60_000 || this.doneHandovers.has(`${id}:${start}`)) this.pendingHandovers.delete(id);
+    }
     for (const a of inputs.agents) {
       const m = this.minds.get(a.id);
       if (!m) continue;
       m.input = a;
       m.name = a.name;
+      m.roleId = a.roleId;
+    }
+    this.syncMeetingPlaces();
+    for (const a of inputs.agents) {
+      const m = this.minds.get(a.id);
+      if (!m) continue;
       const desired = this.desiredMode(m);
       if (desired !== m.mode) this.applyMode(m, desired, now);
       else this.refreshSeated(m);
     }
   }
 
+  /** Pertahankan tempat peserta lama; peserta tambahan memakai tempat berdiri yang unik. */
+  private syncMeetingPlaces() {
+    const participants = this.inputs.agents.filter((a) => this.minds.has(a.id) && a.activity !== 'inactive' && this.inputs.meetingIds.has(a.id));
+    const key = JSON.stringify(participants.map((a) => a.id).sort());
+    if (key === this.meetingKey) return;
+    this.meetingKey = key;
+    const ids = new Set(participants.map((a) => a.id));
+    for (const id of this.meetingPlaces.keys()) if (!ids.has(id)) this.meetingPlaces.delete(id);
+    const room = this.floor.rooms.find((r) => r.kind === 'meeting');
+    if (!room) return;
+    const places = this.meetingSeats.map((seat) => ({ seat, sit: true }));
+    for (let z = room.rect.z + 1; z < room.rect.z + room.rect.d - 0.6; z += 1) {
+      for (let x = room.rect.x + 0.8; x < room.rect.x + room.rect.w - 0.6; x += 1) {
+        const seat = { x, z, yaw: Math.atan2(room.rect.x + room.rect.w / 2 - x, room.rect.z + room.rect.d / 2 - z) };
+        if (this.floor.grid.lineClear(seat, seat) && places.every((p) => Math.hypot(p.seat.x - x, p.seat.z - z) >= 0.9)) places.push({ seat, sit: false });
+      }
+    }
+    const used = new Set([...this.meetingPlaces.values()].map((p) => p.seat));
+    // Kursi berdiri dibuat ulang; koordinat dipakai untuk menjaga alokasi tetap stabil.
+    const occupied = (seat: Seat) => used.has(seat) || [...this.meetingPlaces.values()].some((p) => p.seat.x === seat.x && p.seat.z === seat.z);
+    for (const a of participants.sort((a, b) => roleRank(a.roleId) - roleRank(b.roleId) || a.id.localeCompare(b.id))) {
+      if (this.meetingPlaces.has(a.id)) continue;
+      const place = places.find((p) => !occupied(p.seat));
+      if (place) this.meetingPlaces.set(a.id, place);
+    }
+  }
+
   private handoverKey(m: Mind) {
-    const start = this.inputs.handovers.get(m.id);
-    if (start === undefined || Date.now() - start > HANDOVER_WINDOW_MS) return null;
+    const start = this.pendingHandovers.get(m.id);
+    if (start === undefined) return null;
     const key = `${m.id}:${start}`;
     return this.doneHandovers.has(key) ? null : key;
   }
 
   private desiredMode(m: Mind): Mode {
     if (m.input.activity === 'inactive') return 'ghost';
-    if (this.inputs.meetingIds.has(m.id) && this.meetingSeats.length > 0) return 'meeting';
-    if (m.mode === 'handover' && (m.step || m.queue.length)) return 'handover';
-    if (this.handoverKey(m) && this.managerSpot(m)) return 'handover';
+    if (this.meetingPlaces.has(m.id)) return 'meeting';
     const a = m.input.activity;
-    return a === 'working' || a === 'waiting' || a === 'blocked' ? 'desk' : 'idle';
+    if (a === 'working' || a === 'waiting' || a === 'blocked' || this.inputs.meetingIds.has(m.id)) return 'desk';
+    // Manager tetap di mejanya selama ada staf yang sedang mengantarkan hasil.
+    if (this.claims.has(`handover:${m.id}`)) return 'desk';
+    if (m.mode === 'handover' && (m.step || m.queue.length)) return this.managerSpot(m) ? 'handover' : 'idle';
+    const owner = this.claims.get(`handover:${this.inputs.managerId}`);
+    if (this.time >= m.retryAt && (!owner || owner === m.id) && this.handoverKey(m) && this.managerSpot(m)) return 'handover';
+    return 'idle';
   }
 
   private managerSpot(m: Mind): Seat | null {
     const id = this.inputs.managerId;
     if (!id || id === m.id) return null;
+    const manager = this.minds.get(id);
+    if (!manager || manager.input.activity === 'inactive' || this.inputs.meetingIds.has(id) || manager.seatedAt !== manager.home) return null;
     const seat = this.floor.seatOf.get(id);
-    return seat ? { x: seat.x + 1.3, z: seat.z + 0.1, yaw: -Math.PI / 2 } : null;
+    const spot = seat ? { x: seat.x + 1.3, z: seat.z + 0.1, yaw: -Math.PI / 2 } : null;
+    return spot && this.floor.grid.isOpenAt(spot) ? spot : null;
   }
 
   private release(m: Mind) {
@@ -220,19 +274,21 @@ export class BehaviorEngine {
     m.queue = [];
     m.step = null;
     m.bubble = null;
+    m.cup = false;
     m.paper = false;
+    m.handover = null;
+    m.gesture = 'none';
     switch (mode) {
       case 'ghost':
-        this.snapHome(m);
+        if (m.seatedAt !== m.home) m.queue = this.goHome(m);
         m.ghost = true;
         m.label = ACTIVITY_LABEL.inactive;
         return;
       case 'meeting': {
         m.ghost = false;
-        const order = this.inputs.agents.filter((a) => this.inputs.meetingIds.has(a.id) && this.minds.has(a.id)).sort((a, b) => roleRank(a.roleId) - roleRank(b.roleId) || a.id.localeCompare(b.id));
-        const i = Math.max(0, order.findIndex((a) => a.id === m.id));
-        const seat = this.meetingSeats[i % this.meetingSeats.length]!;
-        m.queue = [...(m.seatedAt === seat ? [] : [{ t: 'stand' } as Step, { t: 'walk', to: seat, yaw: seat.yaw } as Step, { t: 'sit', seat } as Step])];
+        const place = this.meetingPlaces.get(m.id)!;
+        const seat = place.seat;
+        m.queue = [{ t: 'stand' }, { t: 'walk', to: seat, yaw: seat.yaw }, ...(place.sit ? [{ t: 'sit', seat } as Step] : [])];
         m.label = 'Menuju Ruang Rapat';
         return;
       }
@@ -241,7 +297,8 @@ export class BehaviorEngine {
         const key = this.handoverKey(m);
         const spot = this.managerSpot(m);
         if (!key || !spot) return this.applyMode(m, this.desiredMode({ ...m, mode: 'idle' } as Mind), now);
-        this.doneHandovers.add(key);
+        this.claim(m, `handover:${this.inputs.managerId}`);
+        m.handover = key;
         m.queue = [
           { t: 'stand' },
           { t: 'walk', to: spot, yaw: spot.yaw, paper: true },
@@ -266,23 +323,28 @@ export class BehaviorEngine {
     }
   }
 
-  private snapHome(m: Mind) {
-    Object.assign(m, { x: m.home.x, z: m.home.z, yaw: m.home.yaw, pose: 'sit' as Pose, gesture: 'none' as Gesture, seatedAt: m.home, cup: false, paper: false });
-  }
-
   /** Karyawan yang duduk di mejanya: gerakan tangan mengikuti pekerjaannya. */
   private refreshSeated(m: Mind) {
-    if (m.step || m.queue.length || m.pose !== 'sit') return;
-    if (m.mode === 'meeting' && m.seatedAt !== m.home) {
+    if (m.step || m.queue.length) return;
+    const meetingPlace = this.meetingPlaces.get(m.id);
+    if (m.mode === 'meeting' && meetingPlace && Math.hypot(m.x - meetingPlace.seat.x, m.z - meetingPlace.seat.z) < 0.01) {
       m.gesture = 'talk';
       m.label = 'Rapat strategi';
       m.bubble = null;
       return;
     }
+    if (m.pose !== 'sit') return;
     if (m.seatedAt !== m.home) return;
     if (m.mode === 'desk') {
       m.gesture = m.input.activity === 'working' ? 'type' : 'idle';
       m.label = ACTIVITY_LABEL[m.input.activity];
+      if (this.inputs.meetingIds.has(m.id)) {
+        m.gesture = 'talk';
+        m.label = 'Mengikuti rapat dari meja';
+      }
+    } else if (m.mode === 'ghost') {
+      m.gesture = 'none';
+      m.label = ACTIVITY_LABEL.inactive;
     } else if (m.mode === 'idle' && m.nextIdleAt !== Infinity) {
       m.gesture = 'idle';
       m.label = ACTIVITY_LABEL[m.input.activity];
@@ -295,7 +357,7 @@ export class BehaviorEngine {
   }
 
   private tick(m: Mind, dt: number, now: number) {
-    if (m.mode === 'ghost') return;
+    if (m.mode === 'ghost' && m.seatedAt === m.home && !m.step && !m.queue.length) return;
     if (!m.step) {
       m.step = m.queue.shift() ?? null;
       if (m.step) this.begin(m, m.step, now);
@@ -307,6 +369,10 @@ export class BehaviorEngine {
     // Antrean habis.
     if (m.mode === 'handover') return this.applyMode(m, this.desiredMode({ ...m, mode: 'idle' } as Mind), now);
     this.refreshSeated(m);
+    if (m.mode !== 'meeting' && m.seatedAt !== m.home && now >= m.retryAt) {
+      m.queue = this.goHome(m);
+      return;
+    }
     if (m.mode === 'idle' && m.seatedAt === m.home) {
       if (m.nextIdleAt === Infinity) {
         // Perilaku acak selesai dan sudah kembali ke meja.
@@ -327,6 +393,10 @@ export class BehaviorEngine {
         m.step = null;
         return;
       case 'sit':
+        if (Math.hypot(m.x - s.seat.x, m.z - s.seat.z) > 0.01 || !this.floor.grid.wallsClear(m, s.seat)) {
+          this.cancelRoute(m, now);
+          return;
+        }
         Object.assign(m, { x: s.seat.x, z: s.seat.z, yaw: s.seat.yaw, pose: 'sit' as Pose, seatedAt: s.seat, cup: false, paper: false });
         m.step = null;
         return;
@@ -335,9 +405,7 @@ export class BehaviorEngine {
         m.paper = !!s.paper;
         const path = this.floor.grid.findPath({ x: m.x, z: m.z }, s.to);
         if (!path || path.length < 2) {
-          // Tidak terjangkau: langsung tiba (tidak boleh terjadi pada tata letak yang valid).
-          Object.assign(m, { x: s.to.x, z: s.to.z });
-          m.step = null;
+          this.cancelRoute(m, now);
           return;
         }
         m.path = path;
@@ -369,6 +437,20 @@ export class BehaviorEngine {
     }
   }
 
+  private cancelRoute(m: Mind, now: number) {
+    this.release(m);
+    m.queue = [];
+    m.step = null;
+    m.path = [];
+    m.pose = 'stand';
+    m.gesture = 'none';
+    m.cup = false;
+    m.paper = false;
+    m.label = 'Jalur tidak tersedia';
+    m.nextIdleAt = now + 10;
+    m.retryAt = now + 10;
+  }
+
   private advance(m: Mind, s: Step, dt: number, now: number) {
     if (s.t === 'walk') {
       let budget = WALK_SPEED * dt;
@@ -377,6 +459,12 @@ export class BehaviorEngine {
         const dx = target.x - m.x;
         const dz = target.z - m.z;
         const dist = Math.hypot(dx, dz);
+        const next = dist <= budget ? target : { x: m.x + (dx / dist) * budget, z: m.z + (dz / dist) * budget };
+        // Guard tiap frame memakai collider fisik, termasuk ruas khusus sofa dan path yang lama.
+        if (!this.floor.grid.wallsClear(m, next)) {
+          this.cancelRoute(m, now);
+          return;
+        }
         if (dist > 0.001) m.yaw = Math.atan2(dx, dz);
         if (dist <= budget) {
           m.x = target.x;
@@ -399,6 +487,7 @@ export class BehaviorEngine {
     }
     if (s.t === 'act') {
       if (now >= m.actEnds) {
+        if (s.gesture === 'give' && m.handover) this.doneHandovers.add(m.handover);
         m.bubble = null;
         m.step = null;
       }
@@ -501,6 +590,8 @@ export class BehaviorEngine {
               { t: 'sit', seat: who.home },
             ];
             this.release(partner);
+            m.group = group;
+            partner.group = group;
             partner.queue = plan(partner, m, p.chatSpots[1]);
             partner.step = null;
             partner.nextIdleAt = Infinity;

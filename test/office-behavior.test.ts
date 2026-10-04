@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type AgentInput, BehaviorEngine, type EngineInputs, WALK_SPEED } from '../web/src/office/behavior';
 import { buildBuilding, type LayoutAgent } from '../web/src/office/layout';
+import { animationSeed } from '../web/src/office/look';
+import type { Pt } from '../web/src/office/pathfinding';
 
 const DEPTS = [
   { id: 'executive', name: 'Ruang Eksekutif', color: '#6e7c99' },
@@ -71,6 +73,8 @@ describe('perilaku avatar', () => {
     const { engine, floor, inputs, run } = setup();
     const labels = new Set<string>();
     const poses = new Set<string>();
+    const walls = [...floor.walls, ...floor.shellWalls];
+    const previous = new Map<string, Pt>([...floor.seatOf]);
     // Kursi sofa berada di atas objek sofa: ujung langkah menuju sofa boleh masuk sel tertutup.
     const sofaSeats = floor.rooms.flatMap((r) => r.pantry?.sofaSeats ?? []);
     const walkable = (id: string) => {
@@ -83,6 +87,20 @@ describe('perilaku avatar', () => {
         labels.add(s.label.replace(/ dengan .*/, ' dengan …'));
         poses.add(s.pose);
         expect(walkable(a.id), `${a.id} @ ${s.x.toFixed(2)},${s.z.toFixed(2)} ${s.label}`).toBe(true);
+        const from = previous.get(a.id)!;
+        const samples = Math.max(1, Math.ceil(Math.hypot(s.x - from.x, s.z - from.z) / 0.025));
+        let collision = false;
+        for (let k = 0; k <= samples && !collision; k++) {
+          const x = from.x + (s.x - from.x) * k / samples;
+          const z = from.z + (s.z - from.z) * k / samples;
+          collision = walls.some((w) => {
+            const dx = Math.max(w.x - x, 0, x - w.x - w.w);
+            const dz = Math.max(w.z - z, 0, z - w.z - w.d);
+            return dx * dx + dz * dz <= 0.46 ** 2;
+          });
+        }
+        expect(collision, `${a.id} badan menembus dinding saat ${s.label}`).toBe(false);
+        previous.set(a.id, { x: s.x, z: s.z });
       }
     });
     for (const l of ['Duduk santai', 'Peregangan', 'Menyeduh kopi', 'Minum kopi', 'Mengobrol dengan …', 'Berjalan']) expect(labels, l).toContain(l);
@@ -98,7 +116,7 @@ describe('perilaku avatar', () => {
       for (const a of AGENTS) {
         const s = engine.get(a.id)!;
         const p = last.get(a.id);
-        if (p && s.pose === 'walk') maxStep = Math.max(maxStep, Math.hypot(s.x - p[0], s.z - p[1]));
+        if (p) maxStep = Math.max(maxStep, Math.hypot(s.x - p[0], s.z - p[1]));
         last.set(a.id, [s.x, s.z]);
       }
     });
@@ -176,18 +194,20 @@ describe('perilaku avatar', () => {
     let paperSeen = false;
     let gave = false;
     let nearManager = false;
+    let returned = false;
     const mgr = floor.seatOf.get('mgr')!;
+    const seat = floor.seatOf.get('w1')!;
     run(60, inputs({ handovers }, { w1: 'done' }), () => {
       const s = engine.get('w1')!;
       paperSeen ||= s.paper;
       gave ||= s.gesture === 'give';
       nearManager ||= Math.hypot(s.x - (mgr.x + 1.3), s.z - (mgr.z + 0.1)) < 0.6;
+      returned ||= gave && s.pose === 'sit' && s.x === seat.x && s.z === seat.z;
     });
     expect(paperSeen && gave && nearManager).toBe(true);
-    const seat = floor.seatOf.get('w1')!;
     const s = engine.get('w1')!;
     expect(s.paper).toBe(false);
-    expect([s.x, s.z]).toEqual([seat.x, seat.z]);
+    expect(returned).toBe(true); // Setelah pulang staf boleh kembali beraktivitas idle.
   });
 
   it('serah-terima tidak diulang untuk kejadian yang sama', () => {
@@ -208,5 +228,133 @@ describe('perilaku avatar', () => {
       return out;
     };
     expect(trace(a)).toEqual(trace(b));
+  });
+
+  it('pekerjaan baru memutus serah-terima; event belum dianggap selesai sebelum benar-benar diserahkan', () => {
+    const { engine, floor, inputs, run } = setup();
+    const handovers = new Map([['w1', Date.now()]]);
+    run(0.3, inputs({ handovers }));
+    expect(engine.get('w1')!.paper).toBe(true);
+    run(30, inputs({ handovers }, { w1: 'working' }));
+    expect(engine.get('w1')).toMatchObject({ ...floor.seatOf.get('w1'), pose: 'sit', gesture: 'type', paper: false });
+  });
+
+  it('menjadi nonaktif saat berjalan tidak menyebabkan teleport ke meja', () => {
+    const { engine, floor, inputs, run } = setup();
+    run(3, inputs({ meetingIds: new Set(['w1']) }));
+    const previous = { ...engine.get('w1')! };
+    expect(previous.pose).toBe('walk');
+    run(0.1, inputs({}, { w1: 'inactive' }));
+    const s = engine.get('w1')!;
+    expect(Math.hypot(s.x - previous.x, s.z - previous.z)).toBeLessThanOrEqual(WALK_SPEED * 0.1 + 1e-6);
+    run(40, inputs({}, { w1: 'inactive' }));
+    expect(engine.get('w1')).toMatchObject({ ...floor.seatOf.get('w1'), pose: 'sit', ghost: true });
+  });
+
+  it('jalur yang terputus tidak memindahkan avatar atau membuatnya duduk di tujuan', () => {
+    const { engine, floor, inputs, run } = setup();
+    floor.grid.blockRect(floor.corridor, 0.5);
+    const home = floor.seatOf.get('w1')!;
+    run(5, inputs({ meetingIds: new Set(['w1']) }));
+    expect(engine.get('w1')).toMatchObject({ x: home.x, z: home.z, pose: 'stand', label: 'Jalur tidak tersedia' });
+  });
+
+  it('guard gerak menghentikan path lama ketika dinding baru memotong langkah berikutnya', () => {
+    const { engine, floor, inputs, run } = setup();
+    const input = inputs({ meetingIds: new Set(['w1']) });
+    run(0.2, input);
+    const before = { ...engine.get('w1')! };
+    expect(before.pose).toBe('walk');
+    const dx = Math.sin(before.yaw);
+    const dz = Math.cos(before.yaw);
+    const wall = Math.abs(dx) > Math.abs(dz)
+      ? { x: before.x + (dx > 0 ? 0.52 : -0.55), z: before.z - 0.9, w: 0.03, d: 1.8 }
+      : { x: before.x - 0.9, z: before.z + (dz > 0 ? 0.52 : -0.55), w: 1.8, d: 0.03 };
+    floor.grid.blockWalls([wall]);
+    expect(floor.grid.wallsClear(before, before)).toBe(true);
+    run(0.1, input);
+    expect(engine.get('w1')).toMatchObject({ x: before.x, z: before.z, pose: 'stand', label: 'Jalur tidak tersedia' });
+  });
+
+  it('peserta baru tidak menggeser kursi peserta lama; lebih dari delapan peserta tidak menumpuk', () => {
+    const agents = [...AGENTS, ...Array.from({ length: 3 }, (_, i) => ({ id: `extra${i}`, name: `Extra ${i}`, roleId: 'content_writer', department: 'content' }))];
+    const floor = buildBuilding(DEPTS, agents).floors[0]!;
+    const input: EngineInputs = { agents: agents.map((a) => ({ ...a, activity: 'idle' })), meetingIds: new Set(['w1', 'w2']), handovers: new Map(), managerId: 'mgr' };
+    const engine = new BehaviorEngine(floor, input.agents);
+    const run = (start: number, end: number) => {
+      for (let now = start; now < end; now += 0.1) { engine.setInputs(input, now); engine.update(0.1, now); }
+    };
+    run(0, 60);
+    const old = { ...engine.get('w1')! };
+    input.meetingIds = new Set(agents.map((a) => a.id));
+    run(60, 150);
+    expect(engine.get('w1')).toMatchObject({ x: old.x, z: old.z, pose: 'sit' });
+    const states = agents.map((a) => engine.get(a.id)!);
+    expect(states.every((s) => s.gesture === 'talk')).toBe(true);
+    expect(states.filter((s) => s.pose === 'sit')).toHaveLength(8);
+    expect(new Set(states.map((s) => `${s.x},${s.z}`)).size).toBe(agents.length);
+  });
+
+  it('serah-terima antre dan Manager tetap di meja selama kunjungan', () => {
+    const { engine, floor, inputs, run } = setup();
+    const handovers = new Map([['w1', Date.now()], ['w2', Date.now()]]);
+    const visitors = new Set<string>();
+    run(70, inputs({ handovers }), () => {
+      const carrying = ['w1', 'w2'].filter((id) => engine.get(id)!.paper);
+      expect(carrying.length).toBeLessThanOrEqual(1);
+      for (const id of ['w1', 'w2']) if (engine.get(id)!.gesture === 'give') {
+        visitors.add(id);
+        expect(engine.get('mgr')).toMatchObject({ ...floor.seatOf.get('mgr'), pose: 'sit' });
+      }
+    });
+    expect(visitors.size).toBe(2);
+  });
+
+  it('event serah-terima yang sudah diterima tetap antre setelah jendela sembilan detik', () => {
+    const dateNow = vi.spyOn(Date, 'now');
+    try {
+      const epoch = 1_800_000_000_000;
+      dateNow.mockReturnValue(epoch);
+      const { engine, inputs, run, now } = setup();
+      const handovers = new Map([['w1', epoch], ['w2', epoch]]);
+      const visitors = new Set<string>();
+      for (let i = 0; i < 550; i++) {
+        dateNow.mockReturnValue(epoch + now() * 1000);
+        run(0.1, inputs({ handovers }), () => {
+          for (const id of ['w1', 'w2']) if (engine.get(id)!.gesture === 'give') visitors.add(id);
+        });
+      }
+      expect(visitors).toEqual(new Set(['w1', 'w2']));
+    } finally { dateNow.mockRestore(); }
+  });
+
+  it('tidak menyerahkan hasil ke kursi kosong ketika Manager pergi rapat', () => {
+    const { engine, inputs, run } = setup();
+    const handovers = new Map([['w1', Date.now()]]);
+    run(2, inputs({ handovers }));
+    let gave = false;
+    run(30, inputs({ handovers, meetingIds: new Set(['mgr']) }), () => { gave ||= engine.get('w1')!.gesture === 'give'; });
+    expect(gave).toBe(false);
+  });
+
+  it('pembatalan pasangan sebelum tiba membatalkan janji ngobrol', () => {
+    const { engine, inputs, run } = setup();
+    let pair: string[] = [];
+    for (let i = 0; i < 3000 && pair.length < 2; i++) {
+      run(0.1, inputs());
+      const minds = engine as unknown as { minds: Map<string, { group: object | null; gesture: string }> };
+      pair = [...minds.minds].filter(([, m]) => m.group && m.gesture !== 'talk').map(([id]) => id);
+    }
+    expect(pair).toHaveLength(2);
+    const states = engine as unknown as { minds: Map<string, { group: { cancelled: boolean } | null }> };
+    const group = states.minds.get(pair[0]!)!.group!;
+    run(0.1, inputs({}, { [pair[1]!]: 'working' }));
+    expect(group.cancelled).toBe(true);
+    run(40, inputs({}, { [pair[1]!]: 'working' }));
+    expect(engine.get(pair[0]!)!.label).not.toMatch(/^Menunggu /);
+  });
+
+  it('fase animasi selalu finite untuk ID pendek dan Unicode', () => {
+    for (const id of ['', 'a', 'ceo', '👩🏽‍💻', 'agent-with-long-id']) expect(Number.isFinite(animationSeed(id))).toBe(true);
   });
 });

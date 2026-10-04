@@ -37,11 +37,12 @@ export function OfficeStage({ data, expand, showAgent = true }: { data: OfficeVi
   );
   const selected = data.agents.find((a) => a.id === selectedId) ?? null;
   const floor = building.floors[Math.min(floorIndex, building.floors.length - 1)]!;
+  const onFloor = data.agents.filter((a) => floor.seatOf.has(a.id));
   const deptColors = new Map(data.departments.map((d) => [d.id, d.color]));
   const counts = {
-    working: data.agents.filter((a) => a.activity === 'working').length,
-    waiting: data.agents.filter((a) => a.activity === 'waiting' || a.activity === 'blocked').length,
-    idle: data.agents.filter((a) => a.activity === 'idle' || a.activity === 'done').length,
+    working: onFloor.filter((a) => a.activity === 'working').length,
+    waiting: onFloor.filter((a) => a.activity === 'waiting' || a.activity === 'blocked').length,
+    idle: onFloor.filter((a) => a.activity === 'idle' || a.activity === 'done').length,
   };
 
   return (
@@ -75,13 +76,13 @@ export function OfficeStage({ data, expand, showAgent = true }: { data: OfficeVi
           <span />
         )}
         <div className="glass counts" aria-label="Status karyawan">
-          <span><b>{data.agents.length}</b> staf</span>
+          <span><b>{onFloor.length}</b> staf di lantai ini</span>
           <span><i className="sq dark-fill-blue" />Bekerja <b>{counts.working}</b></span>
           <span><i className="sq dark-fill-orange" />Antre <b>{counts.waiting}</b></span>
           <span><i className="sq dark-ring-grey" />Santai <b>{counts.idle}</b></span>
         </div>
       </div>
-      {showAgent && selected && (
+      {showAgent && selected && floor.seatOf.has(selected.id) && (
         <div className="stage-agent glass">
           <AgentCard agent={selected} engineRef={engineRef} departmentName={data.departments.find((d) => d.id === selected.department)?.name} onClose={() => setSelectedId(null)} />
         </div>

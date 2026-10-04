@@ -12,6 +12,29 @@ export interface Rect {
 
 /** Resolusi grid lantai (ubin). */
 export const RES = 0.5;
+/** Mencakup bahu, tangan, dan ujung sepatu saat kaki diayunkan dalam animasi jalan. */
+export const AVATAR_RADIUS = 0.46;
+
+/** Uji ruas vs persegi panjang secara kontinu, termasuk ruas pendek dan dinding tipis. */
+function intersectsRect(a: Pt, b: Pt, r: Rect) {
+  let enter = 0;
+  let exit = 1;
+  for (const [start, delta, min, max] of [
+    [a.x, b.x - a.x, r.x, r.x + r.w],
+    [a.z, b.z - a.z, r.z, r.z + r.d],
+  ]) {
+    if (Math.abs(delta!) < 1e-10) {
+      if (start! < min! || start! > max!) return false;
+      continue;
+    }
+    const t1 = (min! - start!) / delta!;
+    const t2 = (max! - start!) / delta!;
+    enter = Math.max(enter, Math.min(t1, t2));
+    exit = Math.min(exit, Math.max(t1, t2));
+    if (enter > exit) return false;
+  }
+  return true;
+}
 
 /**
  * Grid jalan kaki satu lantai. Semua sel awalnya tertutup (dinding/luar gedung);
@@ -21,6 +44,10 @@ export class WalkGrid {
   readonly cols: number;
   readonly rows: number;
   private open: Uint8Array;
+  /** Collider dari geometri dinding renderer, diperbesar sesuai badan avatar. */
+  private wallBounds: Rect[] = [];
+  /** Hanya kursi sofa terdaftar boleh diakses di atas perabot, lewat sisi depannya. */
+  private seatAccess = new Map<string, { seat: Pt; approach: Pt }>();
 
   constructor(w: number, d: number) {
     this.cols = Math.ceil(w / RES);
@@ -41,7 +68,7 @@ export class WalkGrid {
     return { x: (i + 0.5) * RES, z: (j + 0.5) * RES };
   }
   isOpenAt(p: Pt) {
-    return this.isOpen(...this.cellOf(p));
+    return this.isOpen(...this.cellOf(p)) && this.wallsClear(p, p);
   }
 
   private paint(r: Rect, value: 0 | 1, pad = 0) {
@@ -59,6 +86,40 @@ export class WalkGrid {
     this.paint(r, 0, pad);
   }
 
+  blockWalls(walls: Rect[]) {
+    const pad = AVATAR_RADIUS + 0.001;
+    for (const wall of walls) {
+      const bounds = { x: wall.x - pad, z: wall.z - pad, w: wall.w + 2 * pad, d: wall.d + 2 * pad };
+      this.wallBounds.push(bounds);
+      this.paint(bounds, 0);
+    }
+  }
+
+  /** Terpisah dari sel/perabot agar akses sofa pun tidak dapat melewati dinding. */
+  wallsClear(a: Pt, b: Pt) {
+    return Number.isFinite(a.x) && Number.isFinite(a.z) && Number.isFinite(b.x) && Number.isFinite(b.z)
+      && !this.wallBounds.some((wall) => intersectsRect(a, b, wall));
+  }
+
+  registerSeat(seat: Pt, approach: Pt) {
+    if (!this.isOpenAt(approach) || !this.wallsClear(seat, approach)) throw new Error('Akses kursi harus berada di lantai terbuka tanpa memotong dinding');
+    this.seatAccess.set(`${seat.x},${seat.z}`, { seat, approach });
+  }
+
+  private accessAt(p: Pt, allowTransit = false) {
+    const exact = this.seatAccess.get(`${p.x},${p.z}`);
+    if (exact) return exact.approach;
+    if (!allowTransit || this.isOpenAt(p)) return undefined;
+    // Pergantian aktivitas bisa terjadi saat avatar masih berada di ruas akses sofa.
+    for (const { seat, approach } of this.seatAccess.values()) {
+      const dx = approach.x - seat.x;
+      const dz = approach.z - seat.z;
+      const t = ((p.x - seat.x) * dx + (p.z - seat.z) * dz) / (dx * dx + dz * dz);
+      if (t >= 0 && t <= 1 && Math.hypot(p.x - seat.x - t * dx, p.z - seat.z - t * dz) < 0.001) return approach;
+    }
+    return undefined;
+  }
+
   /** Sel terbuka terdekat dari titik (spiral), atau null. */
   nearestOpen(p: Pt, maxRadius = 2): Pt | null {
     const [ci, cj] = this.cellOf(p);
@@ -70,7 +131,7 @@ export class WalkGrid {
         if (!this.isOpen(ci + di, cj + dj)) continue;
         const c = this.center(ci + di, cj + dj);
         const dist = (c.x - p.x) ** 2 + (c.z - p.z) ** 2;
-        if (dist < bestD) (bestD = dist), (best = c);
+        if (dist <= maxRadius ** 2 && dist < bestD) (bestD = dist), (best = c);
       }
     }
     return best;
@@ -81,6 +142,7 @@ export class WalkGrid {
    * ruang bebas selebar itu di kiri-kanan garis (badan avatar tidak menyerempet dinding/perabot).
    */
   lineClear(a: Pt, b: Pt, clearance = 0) {
+    if (!this.wallsClear(a, b)) return false;
     const len = Math.hypot(b.x - a.x, b.z - a.z);
     const steps = Math.max(1, Math.ceil(len / 0.05));
     const nx = len > 0 ? -(b.z - a.z) / len : 0;
@@ -97,9 +159,10 @@ export class WalkGrid {
 
   /** A* 8 arah tanpa memotong sudut; hasil dihaluskan. null bila tidak terjangkau. */
   findPath(from: Pt, to: Pt): Pt[] | null {
-    const start = this.isOpenAt(from) ? from : this.nearestOpen(from);
-    const goal = this.isOpenAt(to) ? to : this.nearestOpen(to);
+    const start = this.accessAt(from, true) ?? (this.isOpenAt(from) ? from : null);
+    const goal = this.accessAt(to) ?? (this.isOpenAt(to) ? to : null);
     if (!start || !goal) return null;
+    if (!this.wallsClear(from, start) || !this.wallsClear(goal, to)) return null;
     const [si, sj] = this.cellOf(start);
     const [gi, gj] = this.cellOf(goal);
     const idx = (i: number, j: number) => j * this.cols + i;
@@ -165,6 +228,7 @@ export class WalkGrid {
           const nk = idx(ni, nj);
           const cost = g[k]! + (di !== 0 && dj !== 0 ? 1.414 : 1);
           if (cost < g[nk]!) {
+            if (!this.wallsClear(this.center(i, j), this.center(ni, nj))) continue;
             g[nk] = cost;
             prev[nk] = k;
             push(cost + octile(ni, nj), nk);
@@ -177,22 +241,24 @@ export class WalkGrid {
     const cells: Pt[] = [];
     for (let k = idx(gi, gj); k !== -1; k = prev[k]!) cells.push(this.center(k % this.cols, (k / this.cols) | 0));
     cells.reverse();
-    // Titik awal di sel tertutup (mis. kursi sofa): keluar dulu lewat pusat sel terbuka terdekat.
-    const raw: Pt[] = [from, ...(start === from ? [] : [start]), ...cells.slice(1, -1), ...(goal === to ? [to] : [goal, to])];
+    // Pusat sel pertama/terakhir tetap disertakan agar titik di tepi sel tidak memotong sudut.
+    const raw: Pt[] = [start, ...cells, goal];
     // Haluskan: lompat ke titik terjauh yang masih berupa garis lurus bebas.
     const out: Pt[] = [raw[0]!];
     let anchor = 0;
     while (anchor < raw.length - 1) {
       let far = raw.length - 1;
       while (far > anchor + 1 && !this.lineClear(raw[anchor]!, raw[far]!, 0.15)) far--;
+      if (!this.lineClear(raw[anchor]!, raw[far]!)) return null;
       out.push(raw[far]!);
       anchor = far;
     }
-    return out;
+    // Akses sofa adalah ruas pendek eksplisit; tidak pernah ikut dihaluskan melintasi perabot.
+    return [...(start === from ? [] : [from]), ...out, ...(goal === to ? [] : [to])];
   }
 
   reachableFrom(p: Pt): Set<number> {
-    const start = this.isOpenAt(p) ? p : this.nearestOpen(p);
+    const start = this.accessAt(p, true) ?? (this.isOpenAt(p) ? p : null);
     const seen = new Set<number>();
     if (!start) return seen;
     const [si, sj] = this.cellOf(start);
@@ -202,7 +268,7 @@ export class WalkGrid {
       const [i, j] = stack.pop()!;
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
         const k = (j + dj) * this.cols + (i + di);
-        if (this.isOpen(i + di, j + dj) && !seen.has(k)) (seen.add(k), stack.push([i + di, j + dj]));
+        if (this.isOpen(i + di, j + dj) && !seen.has(k) && this.wallsClear(this.center(i, j), this.center(i + di, j + dj))) (seen.add(k), stack.push([i + di, j + dj]));
       }
     }
     return seen;
@@ -210,7 +276,7 @@ export class WalkGrid {
 
   isReachable(from: Pt, to: Pt) {
     const reach = this.reachableFrom(from);
-    const target = this.isOpenAt(to) ? to : this.nearestOpen(to);
+    const target = this.accessAt(to) ?? (this.isOpenAt(to) ? to : null);
     if (!target) return false;
     const [i, j] = this.cellOf(target);
     return reach.has(j * this.cols + i);

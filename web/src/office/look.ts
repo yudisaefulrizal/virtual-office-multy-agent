@@ -21,6 +21,11 @@ function hash(s: string) {
   return h >>> 0;
 }
 
+/** Aman juga untuk id pendek, kosong, dan Unicode. */
+export function animationSeed(id: string) {
+  return hash(id) % 17;
+}
+
 /** Tampilan avatar tetap per agent (berasal dari id), jadi setiap karyawan punya wajah sendiri. */
 export function lookFor(id: string, department: string): Look {
   const h = hash(id);

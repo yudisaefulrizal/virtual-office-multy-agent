@@ -1,12 +1,12 @@
 import { Environment, Lightformer, OrbitControls, RoundedBox, SoftShadows } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from 'react';
-import { Vector3, type Group } from 'three';
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
+import { Color, Vector3, type Group } from 'three';
 import type { OfficeAgent, OfficeEvent, RuntimeInfo } from '../api';
 import { ACTIVITY } from '../format';
 import { type AgentState, BehaviorEngine, HANDOVER_WINDOW_MS, type EngineInputs } from './behavior';
 import type { FloorLayout, RoomLayout, Seat } from './layout';
-import { lookFor, type Look } from './look';
+import { animationSeed, lookFor, type Look } from './look';
 import type { Rect } from './pathfinding';
 
 const ACCENT = '#6f8fff';
@@ -80,7 +80,7 @@ function Cyl({ at, radius, h, top, ...m }: { at: [number, number, number]; radiu
 /** Kursi kantor: dudukan empuk, sandaran, tiang gas, kaki bintang lima beroda. */
 function Chair({ seat, ghost = false }: { seat: Seat; ghost?: boolean }) {
   const o = ghost ? 0.5 : 1;
-  const fabric = '#2c3138';
+  const fabric = '#426c68';
   return (
     <group position={[seat.x, 0, seat.z]} rotation={[0, seat.yaw, 0]}>
       {[0, 1, 2, 3, 4].map((i) => (
@@ -105,6 +105,7 @@ function Desk({ desk, glow, ghost }: { desk: Rect; glow: boolean; ghost: boolean
   const o = ghost ? 0.5 : 1;
   const top = 0.56;
   const mx = desk.x + desk.w / 2 + 0.2;
+  const mz = desk.z + desk.d - 0.22;
   const legs: [number, number][] = [
     [desk.x + 0.06, desk.z + 0.06],
     [desk.x + desk.w - 0.1, desk.z + 0.06],
@@ -113,16 +114,16 @@ function Desk({ desk, glow, ghost }: { desk: Rect; glow: boolean; ghost: boolean
   ];
   return (
     <group>
-      <Block at={[desk.x, top - 0.05, desk.z]} size={[desk.w, 0.05, desk.d]} r={0.015} color="#b48a62" rough={0.55} opacity={o} />
+      <Block at={[desk.x, top - 0.05, desk.z]} size={[desk.w, 0.05, desk.d]} r={0.025} color="#c7a17b" rough={0.55} opacity={o} />
       {legs.map(([x, z], i) => (
         <Block key={i} at={[x, 0, z]} size={[0.04, top - 0.05, 0.04]} r={0.01} color="#3a3f47" metal={0.7} rough={0.3} opacity={o} />
       ))}
       {/* Monitor */}
-      <Block at={[mx - 0.08, top, desk.z + 0.12]} size={[0.16, 0.012, 0.12]} r={0.005} color="#2a2e34" metal={0.5} rough={0.35} opacity={o} />
-      <Block at={[mx - 0.02, top, desk.z + 0.16]} size={[0.04, 0.2, 0.03]} r={0.008} color="#2a2e34" metal={0.5} rough={0.35} opacity={o} />
-      <Block at={[mx - 0.32, top + 0.14, desk.z + 0.14]} size={[0.64, 0.38, 0.035]} r={0.015} color="#16191d" metal={0.2} rough={0.4} opacity={o} />
+      <Block at={[mx - 0.08, top, mz - 0.06]} size={[0.16, 0.012, 0.12]} r={0.005} color="#2a2e34" metal={0.5} rough={0.35} opacity={o} />
+      <Block at={[mx - 0.02, top, mz]} size={[0.04, 0.2, 0.03]} r={0.008} color="#2a2e34" metal={0.5} rough={0.35} opacity={o} />
+      <Block at={[mx - 0.32, top + 0.14, mz]} size={[0.64, 0.38, 0.035]} r={0.015} color="#16191d" metal={0.2} rough={0.4} opacity={o} />
       <Block
-        at={[mx - 0.3, top + 0.16, desk.z + 0.176]}
+        at={[mx - 0.3, top + 0.16, mz - 0.005]}
         size={[0.6, 0.34, 0.004]}
         r={0}
         shadow={false}
@@ -133,8 +134,8 @@ function Desk({ desk, glow, ghost }: { desk: Rect; glow: boolean; ghost: boolean
         opacity={o}
       />
       {/* Keyboard + mouse */}
-      <Block at={[mx - 0.22, top, desk.z + desk.d - 0.32]} size={[0.38, 0.018, 0.13]} r={0.006} color="#d9dde3" rough={0.6} opacity={o} />
-      <Block at={[mx + 0.24, top, desk.z + desk.d - 0.3]} size={[0.06, 0.02, 0.09]} r={0.02} color="#d9dde3" rough={0.6} opacity={o} />
+      <Block at={[mx - 0.22, top, desk.z + 0.06]} size={[0.38, 0.018, 0.13]} r={0.006} color="#d9dde3" rough={0.6} opacity={o} />
+      <Block at={[mx + 0.24, top, desk.z + 0.08]} size={[0.06, 0.02, 0.09]} r={0.02} color="#d9dde3" rough={0.6} opacity={o} />
     </group>
   );
 }
@@ -167,7 +168,7 @@ function GlassWall({ r }: { r: Rect }) {
     <group>
       <RectBlock r={r} y={0} h={0.22} color="#e9e6df" rough={0.8} r2={0.01} />
       <Block at={[r.x + 0.02, 0.22, r.z + 0.02]} size={[Math.max(0.02, r.w - 0.04), 0.86, Math.max(0.02, r.d - 0.04)]} r={0} shadow={false} color="#bcd6ea" rough={0.05} metal={0.1} opacity={0.2} />
-      <RectBlock r={r} y={1.08} h={0.04} color="#a9b1bb" metal={0.8} rough={0.3} r2={0.005} />
+      <RectBlock r={r} y={1.08} h={0.04} color="#556365" metal={0.6} rough={0.3} r2={0.005} />
     </group>
   );
 }
@@ -256,10 +257,10 @@ function RoomProps({
         <Block at={[p.table.x, 0.55, p.table.z]} size={[p.table.w, 0.05, p.table.d]} r={0.025} color="#c9a882" rough={0.45} />
         <Cyl at={[p.table.x + p.table.w / 2, 0, p.table.z + p.table.d / 2]} radius={0.05} h={0.55} color="#3a3f47" metal={0.7} rough={0.3} />
         {/* Sofa: dudukan, sandaran, lengan */}
-        <Block at={[p.sofa.x, 0.08, p.sofa.z]} size={[p.sofa.w, 0.3, p.sofa.d]} r={0.06} color="#7d4b4b" rough={0.95} />
-        <Block at={[p.sofa.x - 0.04, 0.08, p.sofa.z]} size={[0.24, 0.62, p.sofa.d]} r={0.07} color="#6e4040" rough={0.95} />
-        <Block at={[p.sofa.x, 0.08, p.sofa.z - 0.02]} size={[p.sofa.w, 0.45, 0.16]} r={0.06} color="#6e4040" rough={0.95} />
-        <Block at={[p.sofa.x, 0.08, p.sofa.z + p.sofa.d - 0.14]} size={[p.sofa.w, 0.45, 0.16]} r={0.06} color="#6e4040" rough={0.95} />
+        <Block at={[p.sofa.x, 0.08, p.sofa.z]} size={[p.sofa.w, 0.3, p.sofa.d]} r={0.06} color="#5e8580" rough={0.95} />
+        <Block at={[p.sofa.x - 0.04, 0.08, p.sofa.z]} size={[0.24, 0.62, p.sofa.d]} r={0.07} color="#426b65" rough={0.95} />
+        <Block at={[p.sofa.x, 0.08, p.sofa.z - 0.02]} size={[p.sofa.w, 0.45, 0.16]} r={0.06} color="#426b65" rough={0.95} />
+        <Block at={[p.sofa.x, 0.08, p.sofa.z + p.sofa.d - 0.14]} size={[p.sofa.w, 0.45, 0.16]} r={0.06} color="#426b65" rough={0.95} />
       </group>
     );
   }
@@ -305,24 +306,30 @@ function Building({
   return (
     <group>
       {/* Pelat lantai beton halus */}
-      <Block at={[-0.3, -0.3, -0.3]} size={[floor.w + 0.6, 0.3, floor.d + 0.6]} r={0.04} color="#b9b3a8" rough={0.85} />
+      <Block at={[-0.5, -0.48, -0.5]} size={[floor.w + 1, 0.42, floor.d + 1]} r={0.16} color="#aaa399" rough={0.85} />
+      <Block at={[-0.3, -0.08, -0.3]} size={[floor.w + 0.6, 0.08, floor.d + 0.6]} r={0.035} color="#e4ddd0" rough={0.8} />
       {/* Dinding belakang dan kiri dengan jendela besar */}
-      <Block at={[-0.3, 0, -0.3]} size={[floor.w + 0.3, 2.5, 0.25]} r={0.02} color="#ece9e2" rough={0.9} />
-      <Block at={[-0.3, 0, -0.05]} size={[0.25, 2.5, floor.d + 0.05]} r={0.02} color="#e4e0d8" rough={0.9} />
+      {floor.shellWalls.map((wall, i) => <RectBlock key={i} r={wall} y={0} h={2.5} r2={0.02} color={i === 0 ? '#ece9e2' : '#e4e0d8'} rough={0.9} />)}
       {floor.windows.map((wx) => (
         <group key={wx}>
-          <Block at={[wx - 1.1, 0.75, -0.08]} size={[2.2, 1.45, 0.05]} r={0.01} color="#9aa3ad" metal={0.8} rough={0.3} />
-          <Block at={[wx - 1.02, 0.82, -0.04]} size={[2.04, 1.31, 0.01]} r={0} shadow={false} color="#cfe6ff" emissive="#9cc7ee" glow={0.55} rough={0.05} />
+          {[-1.1, 1.02].map((offset) => <Block key={offset} at={[wx + offset, 0.75, -0.06]} size={[0.08, 1.45, 0.07]} r={0.005} color="#778b8e" metal={0.7} rough={0.3} />)}
+          {[0.75, 2.12].map((y) => <Block key={y} at={[wx - 1.1, y, -0.06]} size={[2.2, 0.08, 0.07]} r={0.005} color="#778b8e" metal={0.7} rough={0.3} />)}
+          <Block at={[wx - 1.02, 0.83, -0.02]} size={[2.04, 1.29, 0.01]} r={0} shadow={false} color="#cfe6ff" emissive="#9cc7ee" glow={0.55} rough={0.05} />
         </group>
       ))}
-      <RectBlock r={floor.corridor} y={0} h={0.012} color="#c9c2b5" rough={0.6} r2={0} />
+      <RectBlock r={floor.corridor} y={0} h={0.012} color="#e6dfd2" rough={0.6} r2={0} />
       {floor.rooms.map((room) => {
         const inset = { x: room.rect.x + 0.12, z: room.rect.z + 0.12, w: room.rect.w - 0.24, d: room.rect.d - 0.24 };
         return (
           <group key={room.id}>
             <RectBlock r={room.rect} y={0} h={0.014} color="#d2cbbe" rough={0.7} r2={0} />
-            {/* Karpet berwarna divisi */}
-            <RectBlock r={inset} y={0.014} h={0.012} color={deptColor(room)} rough={1} r2={0} shadow={false} />
+            {/* Warna divisi lembut agar meja dan manusia tetap terbaca. */}
+            <RectBlock r={inset} y={0.014} h={0.012} color={`#${new Color('#e5e0d6').lerp(new Color(deptColor(room)), 0.22).getHexString()}`} rough={1} r2={0} shadow={false} />
+            <Block at={[room.rect.x + 0.2, 0.035, room.doorSide === 'bottom' ? room.rect.z + room.rect.d - 0.3 : room.rect.z + 0.2]} size={[0.7, 0.015, 0.06]} r={0} shadow={false} color={deptColor(room)} />
+            {/* Ambang pintu kayu tetap di luar jalur jalan. */}
+            {[room.door.x - 0.1, room.door.x + room.door.w].map((x) => (
+              <Block key={x} at={[x, 0, room.doorSide === 'bottom' ? room.rect.z + room.rect.d - 0.15 : room.rect.z]} size={[0.1, 1.12, 0.15]} r={0.01} color="#b99571" rough={0.6} />
+            ))}
             <RoomProps room={room} agentAt={agentAt} runtimes={runtimes} meetingActive={meetingActive} brewing={brewing} />
           </group>
         );
@@ -376,7 +383,7 @@ function Person({
   const paper = useRef<Group>(null);
   const ring = useRef<Group>(null);
   const yaw = useRef(0);
-  const seed = useMemo(() => (agent.id.charCodeAt(0) + agent.id.charCodeAt(5)) % 17, [agent.id]);
+  const seed = useMemo(() => animationSeed(agent.id), [agent.id]);
   const ghost = agent.activity === 'inactive';
   const o = ghost ? 0.35 : 1;
   const shoe = '#1b1d21';
@@ -532,6 +539,7 @@ function LabelProjector({ labels, refs, engine }: { labels: Label[]; refs: Mutab
       if (s) v.set(s.x, l.at[1], s.z);
       else v.set(...l.at);
       v.project(camera);
+      el.style.visibility = v.z < -1 || v.z > 1 ? 'hidden' : '';
       el.style.transform = `translate(${(((v.x + 1) / 2) * size.width).toFixed(1)}px, ${(((1 - v.y) / 2) * size.height).toFixed(1)}px)`;
       // Papan nama ruangan selalu di bawah label agent.
       el.style.zIndex = String(Math.round((1 - v.z) * 1000) + (l.anchor === 'above' ? 2000 : 0));
@@ -541,26 +549,33 @@ function LabelProjector({ labels, refs, engine }: { labels: Label[]; refs: Mutab
 }
 
 /** Atur zoom dan titik pandang agar seluruh lantai muat di layar. */
-function FitCamera({ floor }: { floor: FloorLayout }) {
-  const { camera, size } = useThree();
+function FitCamera({ floor, reset }: { floor: FloorLayout; reset: number }) {
+  const { camera, size, controls } = useThree();
   useEffect(() => {
     const span = floor.w + floor.d;
     const zoomX = size.width / (span * 0.7071 * 1.12);
     const zoomY = size.height / (span * 0.408 + 4.2);
-    camera.zoom = Math.max(8, Math.min(zoomX, zoomY));
+    camera.zoom = Math.max(1, Math.min(zoomX, zoomY));
     camera.position.set(floor.w / 2 + 16, 16, floor.d / 2 + 16);
     camera.lookAt(floor.w / 2, 0, floor.d / 2);
     camera.updateProjectionMatrix();
-  }, [camera, floor, size.width, size.height]);
+    if (controls && 'target' in controls) {
+      const orbit = controls as unknown as { target: Vector3; update: () => void };
+      orbit.target.set(floor.w / 2, 0, floor.d / 2);
+      orbit.update();
+    }
+  }, [camera, controls, floor, size.width, size.height, reset]);
   return null;
 }
 
 /** Tick mesin perilaku dan sinkronkan inputnya dengan data terbaru. */
 function Behavior({ engine, inputs, brewing }: { engine: BehaviorEngine; inputs: MutableRefObject<EngineInputs>; brewing: MutableRefObject<boolean> }) {
-  useFrame(({ clock }, dt) => {
-    const now = clock.elapsedTime;
+  const elapsed = useRef(0);
+  useFrame((_, delta) => {
+    const dt = Math.min(delta, 0.1);
+    const now = (elapsed.current += dt);
     engine.setInputs(inputs.current, now);
-    engine.update(Math.min(dt, 0.1), now);
+    engine.update(dt, now);
     brewing.current = engine.ids().some((id) => engine.get(id)?.gesture === 'brew');
   });
   return null;
@@ -626,6 +641,8 @@ export interface SceneProps {
 }
 
 export function OfficeScene({ floor, agents, runtimes, events, meeting, deptColors, selectedId, onSelect, engineRef }: SceneProps) {
+  const [showNames, setShowNames] = useState(true);
+  const [cameraReset, setCameraReset] = useState(0);
   const onFloor = useMemo(() => agents.filter((a) => floor.seatOf.has(a.id)), [agents, floor]);
   const engine = useMemo(
     () => new BehaviorEngine(floor, onFloor.map((a) => ({ id: a.id, name: a.name, roleId: a.roleId, activity: a.activity }))),
@@ -641,7 +658,7 @@ export function OfficeScene({ floor, agents, runtimes, events, meeting, deptColo
     if (e.type !== 'task.completed' || !e.actor.startsWith('agent:')) continue;
     const id = e.actor.slice(6);
     const start = Date.parse(e.createdAt);
-    if (Date.now() - start <= HANDOVER_WINDOW_MS && !handovers.has(id)) handovers.set(id, start);
+    if (Number.isFinite(start) && start <= Date.now() && Date.now() - start <= HANDOVER_WINDOW_MS && start > (handovers.get(id) ?? -Infinity)) handovers.set(id, start);
   }
   const inputs = useRef<EngineInputs>({ agents: [], meetingIds: new Set(), handovers, managerId: null });
   inputs.current = {
@@ -719,10 +736,10 @@ export function OfficeScene({ floor, agents, runtimes, events, meeting, deptColo
   return (
     <div className="scene-wrap">
       <Canvas orthographic shadows dpr={[1, 2]} gl={{ antialias: true }} camera={{ position: [floor.w / 2 + 16, 16, floor.d / 2 + 16], zoom: 30, near: -100, far: 300 }}>
-        <color attach="background" args={['#0e131b']} />
+        <color attach="background" args={['#172435']} />
         <SoftShadows size={18} samples={10} focus={0.5} />
-        <hemisphereLight args={['#dfe7f7', '#2b241d', 0.35]} />
-        <ambientLight intensity={0.06} />
+        <hemisphereLight args={['#e6eef5', '#b3a28b', 0.65]} />
+        <ambientLight intensity={0.12} />
         <directionalLight position={[floor.w * 0.35 + 10, 26, floor.d + 12]} intensity={2.2} color="#ffe9cf" castShadow shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-normalBias={0.03}>
           <orthographicCamera attach="shadow-camera" args={[-30, 30, 30, -30, 1, 120]} />
         </directionalLight>
@@ -732,8 +749,8 @@ export function OfficeScene({ floor, agents, runtimes, events, meeting, deptColo
           <Lightformer form="rect" intensity={0.7} color="#ffe7c7" position={[-12, 4, -6]} rotation-y={Math.PI / 2} scale={[20, 6, 1]} />
           <Lightformer form="rect" intensity={0.5} color="#cfe0ff" position={[12, 4, 8]} rotation-y={-Math.PI / 2} scale={[20, 6, 1]} />
         </Environment>
-        <FitCamera floor={floor} />
-        <OrbitControls target={[floor.w / 2, 0, floor.d / 2]} enableRotate minPolarAngle={Math.PI / 6} maxPolarAngle={Math.PI / 2.6} minZoom={8} maxZoom={110} enableDamping />
+        <FitCamera floor={floor} reset={cameraReset} />
+        <OrbitControls makeDefault target={[floor.w / 2, 0, floor.d / 2]} enableRotate minPolarAngle={Math.PI / 6} maxPolarAngle={Math.PI / 2.6} minZoom={0.5} maxZoom={110} enableDamping />
         <Building
           floor={floor}
           deptColor={(r) => (r.kind === 'department' ? deptColors.get(r.id) ?? r.color : r.color)}
@@ -753,6 +770,7 @@ export function OfficeScene({ floor, agents, runtimes, events, meeting, deptColo
           <div
             key={l.key}
             className="label-anchor"
+            style={{ display: l.follow && !showNames && l.follow !== selectedId ? 'none' : undefined }}
             ref={(el) => {
               if (el) labelRefs.current.set(l.key, el);
               else labelRefs.current.delete(l.key);
@@ -761,6 +779,10 @@ export function OfficeScene({ floor, agents, runtimes, events, meeting, deptColo
             <div className={l.anchor === 'above' ? 'tag' : 'label-center'}>{l.node}</div>
           </div>
         ))}
+      </div>
+      <div className="scene-tools glass" aria-label="Kontrol tampilan kantor">
+        <button type="button" aria-pressed={showNames} onClick={() => setShowNames((shown) => !shown)}>Nama staf</button>
+        <button type="button" onClick={() => setCameraReset((n) => n + 1)}>Reset tampilan</button>
       </div>
     </div>
   );

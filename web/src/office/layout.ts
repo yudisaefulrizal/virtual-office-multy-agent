@@ -74,6 +74,8 @@ export interface FloorLayout {
   rooms: RoomLayout[];
   /** Segmen dinding rendah antar ruangan (sudah dikurangi celah pintu). */
   walls: Rect[];
+  /** Dinding luar: geometri yang sama dipakai renderer dan collider. */
+  shellWalls: Rect[];
   /** Posisi jendela di dinding belakang (x). */
   windows: number[];
   plants: Pt[];
@@ -265,10 +267,23 @@ function buildFloor(index: number, plans: Plan[], has: { meeting: boolean; runti
   ];
   obstacles.push(...plants.map((p) => ({ x: p.x - 0.25, z: p.z - 0.25, w: 0.5, d: 0.5 })));
   for (const o of obstacles) grid.blockRect(o, 0.1);
-
   const walls = rooms.flatMap(wallsOf);
+  const shellWalls = [
+    { x: -0.3, z: -0.3, w: W + 0.3, d: 0.25 },
+    { x: -0.3, z: -0.05, w: 0.25, d: D + 0.05 },
+  ];
+  // Setelah pintu/interior dibuka: dinding fisik tidak boleh terbuka lagi oleh rasterisasi grid.
+  grid.blockWalls([...walls, ...shellWalls]);
+  for (const room of rooms) {
+    if (!room.pantry) continue;
+    for (const seat of room.pantry.sofaSeats) {
+      const approach = { x: room.pantry.sofa.x + room.pantry.sofa.w + 0.6, z: seat.z };
+      grid.registerSeat(seat, approach);
+    }
+  }
+
   const windows = rooms.filter((r) => r.doorSide === 'bottom').map((r) => (r.pantry ? r.rect.x + 5.6 : r.rect.x + r.rect.w / 2));
-  return { index, w: W, d: D, corridor, rooms, walls, windows, plants, obstacles, grid, seatOf, roomOf };
+  return { index, w: W, d: D, corridor, rooms, walls, shellWalls, windows, plants, obstacles, grid, seatOf, roomOf };
 }
 
 /** Susun gedung dari divisi (berurutan) dan karyawan. Divisi tak dikenal dibuat sebagai ruangan sendiri. */
